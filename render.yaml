@@ -1,0 +1,24 @@
+# Render Blueprint for the SMJ Jewellery API (optional - see README "Deployment").
+# Secrets (DATABASE_URL, JWT_SECRET, CORS_ORIGINS) are set in the Render dashboard, not here.
+services:
+  - type: web
+    name: smj-jewellery-api
+    runtime: node
+    rootDir: backend
+    region: singapore
+    plan: starter
+    buildCommand: npm ci --include=dev && npm run build
+    preDeployCommand: npm run db:migrate:prod
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "1"
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
