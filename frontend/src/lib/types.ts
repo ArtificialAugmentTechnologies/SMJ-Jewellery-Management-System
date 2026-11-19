@@ -123,6 +123,8 @@ export interface Invoice {
   itemDiscount: string;
   overallDiscount: string;
   discount: string;
+  gstRate: string;
+  gstAmount: string;
   grandTotal: string;
   amountPaid: string;
   paymentStatus: PaymentStatus;

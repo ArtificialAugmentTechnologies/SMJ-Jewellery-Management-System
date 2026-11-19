@@ -6,7 +6,7 @@ PostgreSQL schema for the SMJ Jewellery Store Management System, designed for **
 |------|---------|
 | `schema.sql` | Canonical schema: 11 tables, constraints, indexes, sequences. Runs standalone in the Neon SQL Editor or `psql`. |
 | `seed.sql` | Optional sample data: a placeholder gold/silver rate and opening stock. Does **not** create users. |
-| `../backend/migrations/0001_initial_schema.sql` | The same schema as a migration. `npm run db:migrate` applies it. |
+| `../backend/migrations/*.sql` | The same schema built step by step (0001 initial, 0002 optional GST). `npm run db:migrate` applies any that are pending. |
 
 ## Tables
 
@@ -40,7 +40,7 @@ Migration bookkeeping lives in a separate schema (`smj_meta.schema_migrations`),
 
 - `CHECK (quantity_sold + quantity_returned <= quantity_issued)`: a party can never sell or return more than it took.
 - `CHECK (products.quantity >= 0)`: stock can never go negative.
-- `CHECK (grand_total = subtotal - discount)`, `discount = item_discount + overall_discount`, and `amount_paid <= grand_total`.
+- `CHECK (grand_total = subtotal - discount + gst_amount)`, `discount = item_discount + overall_discount`, and `amount_paid <= grand_total`. GST is optional (`gst_rate` 0–28 %, 0 = no GST).
 - `CHECK (total_amount = gold_amount + making_charges - discount)` on every invoice line.
 - Retail invoices must reference a customer, and wholesale invoices a party (`invoices_owner_chk`).
 - Money uses `NUMERIC(…, 2)`, weight uses `NUMERIC(…, 3)` in grams, and all timestamps are `TIMESTAMPTZ`.

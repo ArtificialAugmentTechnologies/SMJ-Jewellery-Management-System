@@ -39,6 +39,8 @@ export interface CreateInvoiceInput {
   goldRateId?: number | null;
   items: InvoiceItemInput[];
   overallDiscount: string;
+  /** Total GST % (e.g. "3"); "0" or empty = no GST. */
+  gstRate?: string;
   payment?: PaymentInput | null;
   notes?: string | null;
   userId: number;
@@ -132,10 +134,14 @@ export async function createInvoice(tx: Tx, input: CreateInvoiceInput) {
   const itemDiscount = sum((l) => l.calc.discount);
   const overallDiscount = toPaise(input.overallDiscount || '0');
   const discount = itemDiscount + overallDiscount;
-  const grandTotal = subtotal - discount;
-  if (grandTotal < 0n) {
+  const taxable = subtotal - discount;
+  if (taxable < 0n) {
     throw badRequest('discount_exceeds_amount', 'Total discount cannot exceed the invoice subtotal');
   }
+  // Optional GST on the taxable value, rounded half-up to the paisa.
+  const gstRateX100 = toPaise(input.gstRate || '0'); // 3% -> 300
+  const gstAmount = (taxable * gstRateX100 * 2n + 10000n) / 20000n;
+  const grandTotal = taxable + gstAmount;
 
   const paidNow = input.payment ? toPaise(input.payment.amount) : 0n;
   if (paidNow > grandTotal) {
@@ -165,6 +171,8 @@ export async function createInvoice(tx: Tx, input: CreateInvoiceInput) {
       itemDiscount: fromPaise(itemDiscount),
       overallDiscount: fromPaise(overallDiscount),
       discount: fromPaise(discount),
+      gstRate: fromPaise(gstRateX100),
+      gstAmount: fromPaise(gstAmount),
       grandTotal: fromPaise(grandTotal),
       amountPaid: fromPaise(paidNow),
       paymentStatus: paymentStatus(paidNow, grandTotal),

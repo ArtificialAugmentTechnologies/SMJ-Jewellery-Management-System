@@ -79,14 +79,24 @@ describe('Database', () => {
     assert.equal(await verifyDb(() => {}), true);
   });
 
-  it('migration 0001 matches database/schema.sql', () => {
+  it('migrations and database/schema.sql produce an identical schema', async () => {
     const root = path.resolve(import.meta.dirname, '../..');
-    const strip = (s: string) =>
-      s.split(/\r?\n/).filter((l) => !/^(BEGIN|COMMIT);$/.test(l) && !l.startsWith('-- Migration 0001')).join('\n').trim();
-    assert.equal(
-      strip(fs.readFileSync(path.join(root, 'backend/migrations/0001_initial_schema.sql'), 'utf8')),
-      strip(fs.readFileSync(path.join(root, 'database/schema.sql'), 'utf8')),
-    );
+    const { PGlite } = await import('@electric-sql/pglite');
+    const fresh = new PGlite();
+    await fresh.exec(fs.readFileSync(path.join(root, 'database/schema.sql'), 'utf8'));
+    const shape = async (q: (sql: string) => Promise<unknown[]>) => ({
+      columns: await q(`SELECT table_name || '.' || column_name || ' ' || data_type
+                          || coalesce('(' || numeric_precision || ',' || numeric_scale || ')', '')
+                          || ' null=' || is_nullable || ' default=' || coalesce(column_default, '') AS d
+                        FROM information_schema.columns WHERE table_schema = 'public' ORDER BY 1`),
+      constraints: await q(`SELECT conrelid::regclass || '.' || conname || ' ' || pg_get_constraintdef(oid) AS d
+                            FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1`),
+      indexes: await q(`SELECT indexdef AS d FROM pg_indexes WHERE schemaname = 'public' ORDER BY 1`),
+    });
+    const fromMigrations = await shape((s) => query(s));
+    const fromSchemaFile = await shape(async (s) => (await fresh.query(s)).rows);
+    await fresh.close();
+    assert.deepEqual(fromMigrations, fromSchemaFile);
   });
 });
 
@@ -305,6 +315,39 @@ describe('Retail sales workflow', () => {
     assert.equal(history.body.data.length, 2);
   });
 
+  it('optional GST: 3% on the taxable value, rounded to the paisa', async () => {
+    // 2 g x 7200 = 14400 + 600 making = 15000; item discount 1500 -> 13500; invoice discount 500 -> 13000
+    // GST 3% of 13000 = 390.00 -> grand total 13390.00
+    const r = await api('POST', '/invoices/retail', {
+      customer_id: customerId,
+      items: [{ category: 'Chain', product_name: 'GST Chain', weight: '2', quantity: 1, making_charges: '600', discount: '1500' }],
+      overall_discount: '500',
+      gst_rate: '3',
+      payment: { amount: '13390', method: 'cash' },
+    });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    assert.equal(r.body.data.subtotal, '15000.00');
+    assert.equal(r.body.data.discount, '2000.00');
+    assert.equal(r.body.data.gstRate, '3.00');
+    assert.equal(r.body.data.gstAmount, '390.00');
+    assert.equal(r.body.data.grandTotal, '13390.00');
+    assert.equal(r.body.data.paymentStatus, 'paid');
+    // No GST when the box is not ticked
+    const noGst = await api('POST', '/invoices/retail', {
+      customer_id: customerId,
+      items: [{ category: 'Ring', product_name: 'No GST Ring', weight: '1', quantity: 1 }],
+    });
+    assert.equal(noGst.body.data.gstAmount, '0.00');
+    assert.equal(noGst.body.data.grandTotal, '7200.00');
+    // A rate above 28% is rejected
+    const bad = await api('POST', '/invoices/retail', {
+      customer_id: customerId,
+      items: [{ category: 'Ring', product_name: 'Bad', weight: '1', quantity: 1 }],
+      gst_rate: '30',
+    });
+    assert.equal(bad.status, 400);
+  });
+
   it('records payments and prevents over-payment', async () => {
     const over = await api('POST', `/invoices/${invoiceId}/payments`, { amount: '157510.01', method: 'cash' });
     assert.equal(over.status, 400);
@@ -321,13 +364,13 @@ describe('Retail sales workflow', () => {
 
   it('billing history supports search and filters', async () => {
     const all = await api('GET', '/invoices');
-    assert.equal(all.body.total, 2);
-    assert.equal((await api('GET', '/invoices?search=98765')).body.total, 2);
+    assert.equal(all.body.total, 4);
+    assert.equal((await api('GET', '/invoices?search=98765')).body.total, 4);
     assert.equal((await api('GET', '/invoices?invoice_number=00001')).body.total, 1);
     assert.equal((await api('GET', '/invoices?type=wholesale')).body.total, 0);
-    assert.equal((await api('GET', '/invoices?payment_status=unpaid')).body.total, 1);
+    assert.equal((await api('GET', '/invoices?payment_status=unpaid')).body.total, 2);
     assert.equal((await api('GET', `/invoices?from=${new Date(Date.now() + 86400000).toISOString()}`)).body.total, 0);
-    assert.equal((await api('GET', `/invoices?customer_id=${customerId}`)).body.total, 2);
+    assert.equal((await api('GET', `/invoices?customer_id=${customerId}`)).body.total, 4);
   });
 });
 
@@ -472,10 +515,10 @@ describe('Dashboard and reports', () => {
     assert.equal(r.status, 200);
     const d = r.body.data;
     assert.equal(Number(d.total_customers), 2);
-    assert.equal(Number(d.retail_count), 2);
+    assert.equal(Number(d.retail_count), 4);
     assert.equal(Number(d.wholesale_count), 1);
     assert.equal(d.currentRate.goldRatePerGram, '7200.00');
-    assert.equal(d.recentTransactions.length, 3);
+    assert.equal(d.recentTransactions.length, 5);
   });
 
   for (const report of [
@@ -492,7 +535,7 @@ describe('Dashboard and reports', () => {
 
   it('daily sales totals add up', async () => {
     const r = await api('GET', '/reports/daily-sales');
-    assert.equal(Number(r.body.data[0].grand_total), 167510 + 7200 + 182000);
+    assert.equal(Number(r.body.data[0].grand_total), 167510 + 7200 + 13390 + 7200 + 182000);
   });
 
   it('unknown report is rejected', async () => {

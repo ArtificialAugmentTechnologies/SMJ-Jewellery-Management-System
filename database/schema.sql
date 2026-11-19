@@ -2,8 +2,9 @@
 -- SMJ Jewellery Store Management System - PostgreSQL schema
 -- Target: Neon PostgreSQL (PostgreSQL 15+)
 --
--- This file is the canonical schema. backend/migrations/0001_initial_schema.sql
--- contains the same statements and is applied by `npm run db:migrate`.
+-- This file is the canonical, up-to-date schema (run it on an empty database).
+-- backend/migrations/*.sql build the same schema step by step and are applied by
+-- `npm run db:migrate`; the test-suite checks that both produce identical structures.
 --
 -- 11 tables in schema "public":
 --   users, customers, gold_rates, products, invoices, invoice_items,
@@ -133,6 +134,8 @@ CREATE TABLE invoices (
     item_discount         NUMERIC(14, 2) NOT NULL DEFAULT 0,
     overall_discount      NUMERIC(14, 2) NOT NULL DEFAULT 0,
     discount              NUMERIC(14, 2) NOT NULL DEFAULT 0,
+    gst_rate              NUMERIC(5, 2)  NOT NULL DEFAULT 0,
+    gst_amount            NUMERIC(14, 2) NOT NULL DEFAULT 0,
     grand_total           NUMERIC(14, 2) NOT NULL DEFAULT 0,
     amount_paid           NUMERIC(14, 2) NOT NULL DEFAULT 0,
     payment_status        VARCHAR(10)    NOT NULL DEFAULT 'unpaid',
@@ -151,7 +154,9 @@ CREATE TABLE invoices (
         AND item_discount >= 0 AND overall_discount >= 0 AND grand_total >= 0
     ),
     CONSTRAINT invoices_discount_sum_chk CHECK (discount = item_discount + overall_discount),
-    CONSTRAINT invoices_total_chk CHECK (grand_total = subtotal - discount),
+    CONSTRAINT invoices_gst_chk CHECK (gst_rate >= 0 AND gst_rate <= 28 AND gst_amount >= 0),
+    -- GST (optional) is charged on the taxable value: subtotal - discount
+    CONSTRAINT invoices_total_chk CHECK (grand_total = subtotal - discount + gst_amount),
     CONSTRAINT invoices_paid_chk CHECK (amount_paid >= 0 AND amount_paid <= grand_total)
 );
 CREATE INDEX invoices_customer_idx ON invoices (customer_id);

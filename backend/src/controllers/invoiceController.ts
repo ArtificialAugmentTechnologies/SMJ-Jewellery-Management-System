@@ -28,6 +28,8 @@ const baseInvoiceSchema = {
   gold_rate_id: z.coerce.number().int().positive().optional().nullable(),
   items: z.array(itemSchema).min(1, 'Add at least one product').max(100),
   overall_discount: v.decimal(2, { max: 1_000_000_000 }).default('0'),
+  /** Optional GST %, 0 = no GST. Indian GST on jewellery is 3%. */
+  gst_rate: v.decimal(2, { max: 28 }).default('0'),
   payment: paymentSchema.optional().nullable(),
   notes: v.optionalText(1000),
 };
@@ -45,6 +47,7 @@ export async function createRetailInvoice(req: Request, res: Response) {
       goldRateId: body.gold_rate_id,
       items: body.items,
       overallDiscount: body.overall_discount,
+      gstRate: body.gst_rate,
       payment: body.payment,
       notes: body.notes,
       userId: req.user!.id,
@@ -63,6 +66,7 @@ export async function createWholesaleInvoice(req: Request, res: Response) {
       goldRateId: body.gold_rate_id,
       items: body.items,
       overallDiscount: body.overall_discount,
+      gstRate: body.gst_rate,
       payment: body.payment,
       notes: body.notes,
       userId: req.user!.id,

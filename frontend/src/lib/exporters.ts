@@ -144,6 +144,14 @@ export function buildInvoicePdf(inv: Invoice) {
     ['Item Discounts', `- ${rs(inv.itemDiscount)}`],
     ['Invoice Discount', `- ${rs(inv.overallDiscount)}`],
   ];
+  if (num(inv.gstAmount) > 0) {
+    const half = num(inv.gstRate) / 2;
+    const c = Math.round(num(inv.gstAmount) * 100);
+    const cg = (c - Math.floor(c / 2)) / 100;
+    rows.push(['Taxable Value', rs(num(inv.subtotal) - num(inv.discount))]);
+    rows.push([`CGST @ ${half}%`, rs(cg)]);
+    rows.push([`SGST @ ${half}%`, rs(num(inv.gstAmount) - cg)]);
+  }
   doc.setFontSize(9);
   for (const [k, v] of rows) {
     doc.setTextColor(110, 100, 80);

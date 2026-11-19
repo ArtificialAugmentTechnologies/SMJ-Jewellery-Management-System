@@ -17,7 +17,7 @@ import {
 import { useI18n } from '../../i18n';
 import { useRate, useToast } from '../../context/AppProviders';
 import { api, ApiError } from '../../lib/api';
-import { calcLine, calcTotals, mgToNumber, paiseToNumber, toPaise } from '../../lib/money';
+import { calcLine, discountPaise, mgToNumber, paiseToNumber, paiseToString, toPaise, type DiscountMode } from '../../lib/money';
 import { formatMoney, formatWeight } from '../../lib/format';
 import { downloadInvoicePdf } from '../../lib/exporters';
 import {
@@ -30,7 +30,7 @@ import {
   type PaymentMethod,
   type Product,
 } from '../../lib/types';
-import { Alert, Button, Card, CardHeader, Input, Select, Textarea, cx } from '../ui';
+import { Alert, Button, Card, CardHeader, Input, Select, Textarea, UnitToggle, cx } from '../ui';
 import InvoiceView from './InvoiceView';
 
 /* ------------------------------------------------------------- Stepper --- */
@@ -84,9 +84,69 @@ interface DraftItem {
   weight: string;
   quantity: string;
   making_charges: string;
+  /** What the user typed: a percentage (default) or a rupee amount, per `discount_mode`. */
   discount: string;
+  discount_mode: DiscountMode;
   available?: number;
 }
+
+/** Line amounts in paise. A percentage discount applies to the item subtotal (gold + making). */
+function computeLine(
+  it: { weight: string; quantity: string | number; making_charges: string; discount: string; discount_mode: DiscountMode },
+  rate: string,
+) {
+  const base = calcLine({ weight: it.weight, quantity: it.quantity, rate, making_charges: it.making_charges, discount: '0' });
+  const discount = discountPaise(base.subtotal, it.discount, it.discount_mode);
+  return { ...base, discount, total: base.subtotal - discount };
+}
+type LineCalc = ReturnType<typeof computeLine>;
+
+/**
+ * Bill totals. A percentage invoice discount applies to the amount after item discounts.
+ * Optional GST applies to the taxable value (after all discounts). Mirrors the server calculation.
+ */
+function computeTotals(lines: LineCalc[], overallValue: string, overallMode: DiscountMode, gstRate: string | null) {
+  const sum = (f: (c: LineCalc) => bigint) => lines.reduce((a, c) => a + f(c), 0n);
+  const goldAmount = sum((c) => c.goldAmount);
+  const making = sum((c) => c.making);
+  const itemDiscount = sum((c) => c.discount);
+  const subtotal = goldAmount + making;
+  const overall = discountPaise(subtotal - itemDiscount, overallValue, overallMode);
+  const discount = itemDiscount + overall;
+  const taxable = subtotal - discount;
+  const gst = gstRate ? discountPaise(taxable, gstRate, 'percent') : 0n;
+  return {
+    totalWeightMg: sum((c) => c.weightMg),
+    goldAmount,
+    making,
+    subtotal,
+    itemDiscount,
+    overall,
+    discount,
+    taxable,
+    gstRate: gstRate ?? '0',
+    gst,
+    grandTotal: taxable + gst,
+  };
+}
+
+function DiscountToggle({ value, onChange }: { value: DiscountMode; onChange: (m: DiscountMode) => void }) {
+  const { t } = useI18n();
+  return (
+    <UnitToggle<DiscountMode>
+      label={t('items.discountType')}
+      value={value}
+      onChange={onChange}
+      options={[
+        { value: 'percent', label: '%', title: t('items.discountPercent') },
+        { value: 'amount', label: '₹', title: t('items.discountAmount') },
+      ]}
+    />
+  );
+}
+export type BillTotals = ReturnType<typeof computeTotals>;
+
+const pctTooHigh = (value: string, mode: DiscountMode) => mode === 'percent' && Number(value || 0) > 100;
 
 type PayMode = 'full' | 'partial' | 'unpaid';
 
@@ -99,7 +159,8 @@ const emptyItem = (category: Category | '' = ''): Omit<DraftItem, 'key' | 'categ
   weight: '',
   quantity: '1',
   making_charges: '0',
-  discount: '0',
+  discount: '',
+  discount_mode: 'percent',
 });
 
 let keySeq = 1;
@@ -140,7 +201,10 @@ export default function BillingFlow({
   const [editingKey, setEditingKey] = useState<number | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [stock, setStock] = useState<Product[]>([]);
-  const [overallDiscount, setOverallDiscount] = useState('0');
+  const [overallDiscount, setOverallDiscount] = useState('');
+  const [overallMode, setOverallMode] = useState<DiscountMode>('percent');
+  const [gstOn, setGstOn] = useState(false);
+  const [gstRate, setGstRate] = useState('3');
   const [payMode, setPayMode] = useState<PayMode>('full');
   const [payAmount, setPayAmount] = useState('');
   const [payMethod, setPayMethod] = useState<PaymentMethod>('cash');
@@ -164,20 +228,20 @@ export default function BillingFlow({
   }, [form.category]);
 
   const lineCalcs = useMemo(
-    () => items.map((it) => calcLine({ ...it, rate: rateFor(it.metal) })),
+    () => items.map((it) => computeLine(it, rateFor(it.metal))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [items, rate],
   );
   const totals = useMemo(
-    () => calcTotals(items.map((it) => ({ ...it, rate: rateFor(it.metal) })), overallDiscount),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, overallDiscount, rate],
+    () => computeTotals(lineCalcs, overallDiscount, overallMode, gstOn ? gstRate || '0' : null),
+    [lineCalcs, overallDiscount, overallMode, gstOn, gstRate],
   );
-  const formCalc = calcLine({ ...form, rate: rateFor(form.metal) });
+  const gstError = gstOn && !(Number(gstRate) > 0 && Number(gstRate) <= 28) ? t('totals.gstInvalid') : null;
+  const formCalc = computeLine(form, rateFor(form.metal));
 
   const paidPaise = payMode === 'full' ? totals.grandTotal : payMode === 'partial' ? toPaise(payAmount || '0') : 0n;
   const overallError =
-    totals.grandTotal < 0n ? t('totals.discountTooHigh') : null;
+    pctTooHigh(overallDiscount, overallMode) ? t('items.percentTooHigh') : totals.grandTotal < 0n ? t('totals.discountTooHigh') : null;
   const payError =
     payMode === 'partial' && (paidPaise <= 0n || paidPaise > totals.grandTotal) ? t('payment.exceeds') : null;
 
@@ -207,7 +271,8 @@ export default function BillingFlow({
     if (!form.category) e.category = t('items.selectCategory');
     if (!(Number(form.weight) > 0)) e.weight = t('items.invalidWeight');
     if (!(Number(form.quantity) >= 1) || !Number.isInteger(Number(form.quantity))) e.quantity = t('items.invalidQuantity');
-    if (formCalc.total < 0n) e.discount = t('items.discountTooHigh');
+    if (pctTooHigh(form.discount, form.discount_mode)) e.discount = t('items.percentTooHigh');
+    else if (formCalc.total < 0n) e.discount = t('items.discountTooHigh');
     if (form.product_id && form.available !== undefined) {
       const otherQty = items
         .filter((i) => i.product_id === form.product_id && i.key !== editingKey)
@@ -263,6 +328,8 @@ export default function BillingFlow({
       itemDiscount: String(paiseToNumber(totals.itemDiscount)),
       overallDiscount: String(paiseToNumber(totals.overall)),
       discount: String(paiseToNumber(totals.discount)),
+      gstRate: totals.gstRate,
+      gstAmount: String(paiseToNumber(totals.gst)),
       grandTotal: String(paiseToNumber(totals.grandTotal)),
       amountPaid: String(paiseToNumber(paidPaise)),
       paymentStatus: paidPaise >= totals.grandTotal ? 'paid' : paidPaise > 0n ? 'partial' : 'unpaid',
@@ -301,7 +368,8 @@ export default function BillingFlow({
       const body = {
         [type === 'retail' ? 'customer_id' : 'party_id']: owner.id,
         gold_rate_id: rate.id,
-        items: items.map((it) => ({
+        // Percentages are converted to exact rupee amounts; the server stores and re-checks amounts.
+        items: items.map((it, i) => ({
           product_id: it.product_id,
           product_name: it.product_name,
           category: it.category,
@@ -310,10 +378,11 @@ export default function BillingFlow({
           weight: it.weight,
           quantity: Number(it.quantity),
           making_charges: it.making_charges || '0',
-          discount: it.discount || '0',
+          discount: paiseToString(lineCalcs[i].discount),
         })),
-        overall_discount: overallDiscount || '0',
-        payment: paidPaise > 0n ? { amount: (Number(paidPaise) / 100).toFixed(2), method: payMethod, reference: payRef || null } : null,
+        overall_discount: paiseToString(totals.overall),
+        gst_rate: gstOn ? gstRate : '0',
+        payment: paidPaise > 0n ? { amount: paiseToString(paidPaise), method: payMethod, reference: payRef || null } : null,
         notes: notes || null,
       };
       const r = await api.post<{ data: Invoice }>(`/invoices/${type}`, body);
@@ -466,10 +535,18 @@ export default function BillingFlow({
                 type="number"
                 inputMode="decimal"
                 min="0"
+                max={form.discount_mode === 'percent' ? 100 : undefined}
                 step="0.01"
+                placeholder="0"
                 value={form.discount}
                 onChange={(e) => setField('discount', e.target.value)}
                 error={formErrors.discount}
+                hint={
+                  form.discount_mode === 'percent' && formCalc.discount > 0n
+                    ? `= ${formatMoney(paiseToNumber(formCalc.discount))}`
+                    : undefined
+                }
+                suffix={<DiscountToggle value={form.discount_mode} onChange={(m) => setField('discount_mode', m)} />}
               />
             </div>
             <div className="tabular mt-4 grid grid-cols-3 gap-2 rounded-xl bg-surface-2/70 p-3 text-center text-xs">
@@ -539,7 +616,12 @@ export default function BillingFlow({
                         <td className="px-3 py-2 text-right">{it.quantity}</td>
                         <td className="px-3 py-2 text-right">{formatMoney(paiseToNumber(lineCalcs[i].goldAmount))}</td>
                         <td className="px-3 py-2 text-right">{formatMoney(paiseToNumber(lineCalcs[i].making))}</td>
-                        <td className="px-3 py-2 text-right">{formatMoney(paiseToNumber(lineCalcs[i].discount))}</td>
+                        <td className="px-3 py-2 text-right">
+                          {formatMoney(paiseToNumber(lineCalcs[i].discount))}
+                          {it.discount_mode === 'percent' && Number(it.discount) > 0 && (
+                            <span className="block text-xs text-muted">({Number(it.discount)}%)</span>
+                          )}
+                        </td>
                         <td className="px-3 py-2 text-right font-semibold">{formatMoney(paiseToNumber(lineCalcs[i].total))}</td>
                         <td className="px-3 py-2">
                           <div className="flex justify-end gap-1">
@@ -579,17 +661,56 @@ export default function BillingFlow({
           <Card>
             <CardHeader title={t('totals.summary')} />
             <TotalsSummary totals={totals} />
-            <div className="mt-4">
+            <div className="mt-4 grid gap-4">
               <Input
                 label={t('totals.overallDiscount')}
                 type="number"
                 inputMode="decimal"
                 min="0"
+                max={overallMode === 'percent' ? 100 : undefined}
                 step="0.01"
+                placeholder="0"
                 value={overallDiscount}
                 onChange={(e) => setOverallDiscount(e.target.value)}
                 error={overallError}
+                hint={overallMode === 'percent' && totals.overall > 0n ? `= ${formatMoney(paiseToNumber(totals.overall))}` : undefined}
+                suffix={<DiscountToggle value={overallMode} onChange={setOverallMode} />}
               />
+              <div className="rounded-xl border border-line p-3">
+                <label className="flex cursor-pointer items-center gap-3 text-sm font-medium text-ink">
+                  <input
+                    type="checkbox"
+                    checked={gstOn}
+                    onChange={(e) => setGstOn(e.target.checked)}
+                    className="h-4 w-4 accent-gold-600"
+                  />
+                  {t('totals.applyGst')}
+                </label>
+                {gstOn && (
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <Input
+                      label={t('totals.gstRate')}
+                      type="number"
+                      inputMode="decimal"
+                      min="0.01"
+                      max="28"
+                      step="0.01"
+                      value={gstRate}
+                      onChange={(e) => setGstRate(e.target.value)}
+                      error={gstError}
+                      suffix="%"
+                    />
+                    <div className="tabular flex flex-col justify-end text-sm text-muted">
+                      <span>
+                        {t('totals.cgst')} {Number(gstRate || 0) / 2}%: {formatMoney(paiseToNumber(totals.gst - totals.gst / 2n))}
+                      </span>
+                      <span>
+                        {t('totals.sgst')} {Number(gstRate || 0) / 2}%: {formatMoney(paiseToNumber(totals.gst / 2n))}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </Card>
           <Card>
@@ -645,7 +766,7 @@ export default function BillingFlow({
               <Button variant="outline" icon={ArrowLeft} onClick={() => setStep(1)}>
                 {t('common.back')}
               </Button>
-              <Button onClick={() => setStep(3)} disabled={!!overallError || !!payError}>
+              <Button onClick={() => setStep(3)} disabled={!!overallError || !!payError || !!gstError}>
                 {t('common.next')} <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
@@ -662,7 +783,7 @@ export default function BillingFlow({
             <Button variant="outline" icon={ArrowLeft} onClick={() => setStep(2)}>
               {t('common.back')}
             </Button>
-            <Button icon={Save} onClick={save} loading={saving} disabled={!rate || !!overallError || !!payError || items.length === 0}>
+            <Button icon={Save} onClick={save} loading={saving} disabled={!rate || !!overallError || !!payError || !!gstError || items.length === 0}>
               {saving ? t('retail.savingInvoice') : t('retail.saveInvoice')}
             </Button>
             <Button variant="ghost" icon={Printer} disabled title={t('retail.saveInvoice')}>
@@ -679,7 +800,7 @@ export default function BillingFlow({
   );
 }
 
-export function TotalsSummary({ totals }: { totals: ReturnType<typeof calcTotals> }) {
+export function TotalsSummary({ totals }: { totals: BillTotals }) {
   const { t } = useI18n();
   const row = (label: string, value: string, cls = '') => (
     <div className={cx('flex justify-between py-1.5 text-sm', cls)}>
@@ -695,6 +816,12 @@ export function TotalsSummary({ totals }: { totals: ReturnType<typeof calcTotals
       {row(t('totals.itemDiscount'), `− ${formatMoney(paiseToNumber(totals.itemDiscount))}`)}
       {row(t('totals.overallDiscountShort'), `− ${formatMoney(paiseToNumber(totals.overall))}`)}
       {row(t('totals.totalDiscount'), `− ${formatMoney(paiseToNumber(totals.discount))}`)}
+      {totals.gst > 0n && (
+        <>
+          {row(t('totals.taxable'), formatMoney(paiseToNumber(totals.taxable)))}
+          {row(`${t('totals.gst')} (${Number(totals.gstRate)}%)`, `+ ${formatMoney(paiseToNumber(totals.gst))}`)}
+        </>
+      )}
       <div className="flex items-baseline justify-between pt-3">
         <span className="font-semibold text-ink">{t('totals.grandTotal')}</span>
         <span className={cx('tabular text-2xl font-semibold', totals.grandTotal < 0n ? 'text-red-600' : 'text-gold-700 dark:text-gold-300')}>

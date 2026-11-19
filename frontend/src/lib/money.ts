@@ -17,6 +17,26 @@ function toScaled(value: string | number, scale: number): bigint {
 export const toPaise = (v: string | number) => toScaled(v, 2);
 export const toMg = (v: string | number) => toScaled(v, 3);
 export const paiseToNumber = (p: bigint) => Number(p) / 100;
+
+/** Exact paise -> "1234.50" string for sending to the API. */
+export function paiseToString(p: bigint) {
+  const neg = p < 0n;
+  const abs = neg ? -p : p;
+  return `${neg ? '-' : ''}${abs / 100n}.${(abs % 100n).toString().padStart(2, '0')}`;
+}
+
+export type DiscountMode = 'percent' | 'amount';
+
+/**
+ * Discount in paise. In "percent" mode `value` is a percentage of `base`
+ * (e.g. "10" = 10 %), rounded half-up to the nearest paisa.
+ */
+export function discountPaise(base: bigint, value: string, mode: DiscountMode) {
+  if (mode === 'amount') return toPaise(value || '0');
+  const pctX100 = toPaise(value || '0'); // 10 % -> 1000
+  if (base <= 0n || pctX100 <= 0n) return 0n;
+  return (base * pctX100 * 2n + 10000n) / 20000n;
+}
 export const mgToNumber = (mg: bigint) => Number(mg) / 1000;
 
 export interface DraftLine {

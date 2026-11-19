@@ -87,6 +87,8 @@ export const invoices = pgTable('invoices', {
   itemDiscount: numeric('item_discount', { precision: 14, scale: 2 }).notNull().default('0'),
   overallDiscount: numeric('overall_discount', { precision: 14, scale: 2 }).notNull().default('0'),
   discount: numeric('discount', { precision: 14, scale: 2 }).notNull().default('0'),
+  gstRate: numeric('gst_rate', { precision: 5, scale: 2 }).notNull().default('0'),
+  gstAmount: numeric('gst_amount', { precision: 14, scale: 2 }).notNull().default('0'),
   grandTotal: numeric('grand_total', { precision: 14, scale: 2 }).notNull().default('0'),
   amountPaid: numeric('amount_paid', { precision: 14, scale: 2 }).notNull().default('0'),
   paymentStatus: varchar('payment_status', { length: 10 }).notNull().default('unpaid'),

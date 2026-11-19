@@ -105,36 +105,94 @@ function FieldWrap({ label, hint, error, required, id, children, className }: Fi
   );
 }
 
-interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'prefix'> {
   label?: ReactNode;
   hint?: ReactNode;
   error?: string | null;
   wrapClassName?: string;
-  prefix?: string;
+  /** Fixed text shown in its own box before the value, e.g. "+91" or "₹". */
+  prefix?: ReactNode;
+  /** Text or controls shown in their own box after the value, e.g. "%" or a unit toggle. */
+  suffix?: ReactNode;
 }
 
+const addonBase = 'flex shrink-0 items-center bg-surface-2 px-3 text-sm font-medium text-muted';
+
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
-  { label, hint, error, wrapClassName, className, id, required, prefix, ...rest },
+  { label, hint, error, wrapClassName, className, id, required, prefix, suffix, disabled, ...rest },
   ref,
 ) {
   const autoId = useId();
   const inputId = id ?? autoId;
+  const input = (extra: string) => (
+    <input
+      ref={ref}
+      id={inputId}
+      required={required}
+      disabled={disabled}
+      aria-invalid={!!error}
+      className={cx(extra, className)}
+      {...rest}
+    />
+  );
   return (
     <FieldWrap label={label} hint={hint} error={error} required={required} id={inputId} className={wrapClassName}>
-      <div className="relative">
-        {prefix && <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted">{prefix}</span>}
-        <input
-          ref={ref}
-          id={inputId}
-          required={required}
-          aria-invalid={!!error}
-          className={cx(controlBase, 'h-10', prefix && 'pl-8', error && 'border-red-400 focus:ring-red-300', className)}
-          {...rest}
-        />
-      </div>
+      {prefix || suffix ? (
+        // Addons sit in their own boxes so they can never overlap the typed value.
+        <div
+          className={cx(
+            'flex h-10 w-full overflow-hidden rounded-lg border bg-surface transition-colors',
+            'focus-within:border-gold-400 focus-within:ring-2 focus-within:ring-gold-400/60',
+            error ? 'border-red-400' : 'border-line',
+            disabled && 'opacity-70',
+          )}
+        >
+          {prefix && <span className={cx(addonBase, 'border-r border-line')}>{prefix}</span>}
+          {input(
+            'h-full min-w-0 flex-1 bg-transparent px-3 text-sm text-ink placeholder:text-muted/70 focus:outline-none disabled:text-muted',
+          )}
+          {suffix && <span className={cx(addonBase, 'border-l border-line px-1.5')}>{suffix}</span>}
+        </div>
+      ) : (
+        input(cx(controlBase, 'h-10', error && 'border-red-400 focus:ring-red-300'))
+      )}
     </FieldWrap>
   );
 });
+
+/** Compact "%" / "₹" switch used as an Input suffix for discount fields. */
+export function UnitToggle<T extends string>({
+  value,
+  options,
+  onChange,
+  label,
+}: {
+  value: T;
+  options: { value: T; label: string; title?: string }[];
+  onChange: (v: T) => void;
+  label: string;
+}) {
+  return (
+    <span role="radiogroup" aria-label={label} className="flex gap-0.5">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          role="radio"
+          aria-checked={value === o.value}
+          title={o.title}
+          onClick={() => onChange(o.value)}
+          className={cx(
+            'min-w-7 rounded-md px-1.5 py-1 text-xs font-semibold transition-colors',
+            value === o.value ? 'bg-gold-500 text-white shadow-sm' : 'text-muted hover:text-ink',
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </span>
+  );
+}
 
 interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   label?: ReactNode;

@@ -23,7 +23,7 @@ const REPORTS = [
 ] as const;
 type ReportName = (typeof REPORTS)[number];
 
-const MONEY = new Set(['retail_total', 'wholesale_total', 'discount', 'grand_total', 'amount_paid', 'gold_amount', 'making_charges', 'gold_rate', 'total_amount', 'unit_price', 'balance']);
+const MONEY = new Set(['gst_amount', 'retail_total', 'wholesale_total', 'discount', 'grand_total', 'amount_paid', 'gold_amount', 'making_charges', 'gold_rate', 'total_amount', 'unit_price', 'balance']);
 const WEIGHT = new Set(['total_weight', 'weight']);
 const DATES = new Set(['invoice_date', 'movement_date']);
 const INTS = new Set(['invoices', 'quantity']);

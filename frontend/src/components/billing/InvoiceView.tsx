@@ -119,6 +119,13 @@ export default function InvoiceView({ invoice, draft = false }: { invoice: Invoi
           <Row label={t('totals.subtotal')} value={formatMoney(invoice.subtotal)} />
           <Row label={t('totals.itemDiscount')} value={`− ${formatMoney(invoice.itemDiscount)}`} />
           <Row label={t('totals.overallDiscountShort')} value={`− ${formatMoney(invoice.overallDiscount)}`} />
+          {num(invoice.gstAmount) > 0 && (
+            <>
+              <Row label={t('totals.taxable')} value={formatMoney(num(invoice.subtotal) - num(invoice.discount))} />
+              <Row label={`${t('totals.cgst')} (${num(invoice.gstRate) / 2}%)`} value={formatMoney(cgst(invoice))} />
+              <Row label={`${t('totals.sgst')} (${num(invoice.gstRate) / 2}%)`} value={formatMoney(num(invoice.gstAmount) - cgst(invoice))} />
+            </>
+          )}
           <div className="flex justify-between border-t-2 border-gold-400 pt-2 text-base font-semibold text-ink">
             <dt>{t('totals.grandTotal')}</dt>
             <dd>{formatMoney(invoice.grandTotal)}</dd>
@@ -135,6 +142,12 @@ export default function InvoiceView({ invoice, draft = false }: { invoice: Invoi
       </footer>
     </article>
   );
+}
+
+/** CGST gets the larger half when the paise split is odd (matches the billing screen). */
+export function cgst(inv: Pick<Invoice, 'gstAmount'>) {
+  const p = Math.round(num(inv.gstAmount) * 100);
+  return (p - Math.floor(p / 2)) / 100;
 }
 
 function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {

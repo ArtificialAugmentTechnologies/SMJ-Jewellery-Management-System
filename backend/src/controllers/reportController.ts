@@ -95,6 +95,7 @@ function salesByPeriod(unit: 'day' | 'month', q: Q) {
            COALESCE(sum(grand_total) FILTER (WHERE invoice_type = 'wholesale'), 0) AS wholesale_total,
            sum(total_weight) AS total_weight,
            sum(discount) AS discount,
+           sum(gst_amount) AS gst_amount,
            sum(grand_total) AS grand_total,
            sum(amount_paid) AS amount_paid
     FROM invoices
@@ -110,7 +111,7 @@ function invoiceRegister(q: Q) {
     SELECT i.invoice_number, i.invoice_date,
            COALESCE(c.name, p.name) AS name,
            COALESCE(c.mobile_number, p.mobile_number) AS mobile_number,
-           i.total_weight, i.gold_amount, i.making_charges, i.discount, i.grand_total,
+           i.total_weight, i.gold_amount, i.making_charges, i.discount, i.gst_amount, i.grand_total,
            i.amount_paid, i.payment_status
     FROM invoices i
     LEFT JOIN customers c ON c.id = i.customer_id

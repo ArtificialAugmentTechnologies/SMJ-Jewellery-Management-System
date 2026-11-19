@@ -52,7 +52,12 @@ async function createPgliteHandle(url: string): Promise<DbHandle> {
   const { PGlite, types } = await import('@electric-sql/pglite');
   const { drizzle: drizzlePglite } = await import('drizzle-orm/pglite');
   const location = url.slice('pglite:'.length);
-  const client = new PGlite(location === 'memory' || location === '' ? undefined : location, {
+  const inMemory = location === 'memory' || location === '';
+  if (!inMemory) {
+    const fs = await import('node:fs');
+    fs.mkdirSync(location, { recursive: true });
+  }
+  const client = new PGlite(inMemory ? undefined : location, {
     parsers: { [types.INT8]: (v: string) => Number.parseInt(v, 10) },
   });
   await client.waitReady;
