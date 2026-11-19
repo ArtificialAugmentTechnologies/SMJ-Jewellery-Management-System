@@ -10,7 +10,7 @@ const en = {
     customers: 'Customers',
     products: 'Products',
     stock: 'Stock Management',
-    goldRate: 'Gold Rate Management',
+    goldRate: 'Rate Management',
     billing: 'Billing History',
     reports: 'Reports',
     settings: 'Settings',
@@ -213,6 +213,8 @@ const en = {
     viewPrevious: 'View Previous Bills',
     reviewHint: 'Review the bill below. Saving creates the invoice and updates stock. Saved invoices cannot be edited.',
     draft: 'DRAFT — not saved',
+    livePreview: 'Live bill preview',
+    editBill: 'Edit Bill',
   },
   items: {
     title: 'Jewellery Products',
@@ -372,6 +374,9 @@ const en = {
     totalPurchases: 'Total Purchases',
     lastPurchase: 'Last Purchase',
     since: 'Customer since {date}',
+    searchFirst: 'Search by name, mobile number or email first. "{add}" appears only when no matching customer is found, so the same customer is not added twice.',
+    notFound: 'No customer matches "{query}".',
+    notFoundHint: 'Check the spelling or try the mobile number. If this is a new customer, add them now.',
     searchPlaceholder: 'Search by name, mobile or email',
   },
   products: {

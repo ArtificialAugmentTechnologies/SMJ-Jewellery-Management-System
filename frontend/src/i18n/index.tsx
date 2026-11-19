@@ -4,7 +4,7 @@ import ta from './ta';
 import hi from './hi';
 
 export type Lang = 'en' | 'ta' | 'hi';
-export const LANGS: Lang[] = ['en', 'hi', 'ta'];
+export const LANGS: Lang[] = ['en', 'ta', 'hi'];
 const dictionaries = { en, ta, hi } as const;
 const STORAGE_KEY = 'smj.lang';
 

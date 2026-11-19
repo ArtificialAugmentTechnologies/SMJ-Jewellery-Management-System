@@ -230,11 +230,16 @@ function CustomerStep({ initial, onSelect }: { initial: CustomerDetail | null; o
 export function NewCustomerModal({
   open,
   mobile,
+  initialName = '',
+  initialEmail = '',
   onClose,
   onCreated,
 }: {
   open: boolean;
   mobile: string;
+  /** Optional prefill (e.g. from what was searched on the Customers page). */
+  initialName?: string;
+  initialEmail?: string;
   onClose: () => void;
   onCreated: (c: Customer) => void;
 }) {
@@ -251,8 +256,8 @@ export function NewCustomerModal({
   if (open !== lastOpen) {
     setLastOpen(open);
     if (open) {
-      setName('');
-      setEmail('');
+      setName(initialName);
+      setEmail(initialEmail);
       setMob(mobile);
       setErrors({});
     }

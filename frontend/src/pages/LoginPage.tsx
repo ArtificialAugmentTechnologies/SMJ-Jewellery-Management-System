@@ -7,7 +7,6 @@ import { Alert, Button, Input } from '../components/ui';
 import { CREDIT, LanguageToggle, ThemeToggle } from '../components/layout/AppLayout';
 import { Guilloche, Medallion } from '../components/login/Medallion';
 
-const INSCRIPTION = 'SMJ Jewellery · Silver · Gold · SMJ Jewellery · Silver · Gold ·';
 
 export default function LoginPage() {
   const { t, te } = useI18n();
@@ -62,7 +61,7 @@ export default function LoginPage() {
           {/* Brand panel */}
           <section className="login-panel relative overflow-hidden px-6 py-10 text-white sm:px-10 sm:py-12 lg:py-14">
             <div className="relative flex h-full flex-col items-center justify-center text-center">
-              <Medallion inscription={INSCRIPTION} className="mx-auto h-36 w-36 shrink-0 sm:h-44 sm:w-44 lg:h-52 lg:w-52" />
+              <Medallion className="mx-auto h-36 w-36 shrink-0 sm:h-44 sm:w-44 lg:h-52 lg:w-52" />
               <h1 className="login-rise mt-12 font-display text-3xl font-semibold sm:text-4xl [animation-delay:150ms]">{t('app.name')}</h1>
               <p className="login-rise mt-1 text-sm text-white/80 sm:text-base [animation-delay:250ms]">{t('app.tagline')}</p>
               <ul className="mt-8 hidden w-full max-w-sm grid-cols-2 gap-2.5 sm:grid">

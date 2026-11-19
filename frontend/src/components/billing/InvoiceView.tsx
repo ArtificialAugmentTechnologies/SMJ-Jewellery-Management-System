@@ -14,11 +14,6 @@ export default function InvoiceView({ invoice, draft = false }: { invoice: Invoi
 
   return (
     <article className={cx('print-area relative overflow-hidden rounded-2xl border border-line bg-surface p-5 sm:p-8', draft && 'border-dashed')}>
-      {draft && (
-        <div className="pointer-events-none absolute right-4 top-4 rounded-md border border-amber-400 px-2 py-1 text-xs font-semibold text-amber-700 dark:text-amber-300">
-          {t('retail.draft')}
-        </div>
-      )}
       <header className="flex flex-wrap items-start justify-between gap-4 border-b-2 border-gold-400 pb-4">
         <div className="flex items-center gap-3">
           <Logo size={52} />
@@ -31,6 +26,11 @@ export default function InvoiceView({ invoice, draft = false }: { invoice: Invoi
           </div>
         </div>
         <div className="text-right">
+          {draft && (
+            <span className="mb-1.5 inline-block rounded-md border border-amber-400 px-2 py-0.5 text-xs font-semibold text-amber-700 dark:text-amber-300">
+              {t('retail.draft')}
+            </span>
+          )}
           <p className="font-display text-lg font-semibold uppercase tracking-wide text-gold-700 dark:text-gold-300">
             {invoice.invoiceType === 'retail' ? t('invoice.retailTitle') : t('invoice.wholesaleTitle')}
           </p>

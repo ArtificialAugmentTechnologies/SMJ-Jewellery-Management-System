@@ -160,7 +160,7 @@ const emptyItem = (category: Category | '' = ''): Omit<DraftItem, 'key' | 'categ
   quantity: '1',
   making_charges: '0',
   discount: '',
-  discount_mode: 'percent',
+  discount_mode: 'amount',
 });
 
 let keySeq = 1;
@@ -202,9 +202,9 @@ export default function BillingFlow({
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [stock, setStock] = useState<Product[]>([]);
   const [overallDiscount, setOverallDiscount] = useState('');
-  const [overallMode, setOverallMode] = useState<DiscountMode>('percent');
+  const [overallMode, setOverallMode] = useState<DiscountMode>('amount');
   const [gstOn, setGstOn] = useState(false);
-  const [gstRate, setGstRate] = useState('3');
+  const [gstRate, setGstRate] = useState('18');
   const [payMode, setPayMode] = useState<PayMode>('full');
   const [payAmount, setPayAmount] = useState('');
   const [payMethod, setPayMethod] = useState<PaymentMethod>('cash');
@@ -250,7 +250,7 @@ export default function BillingFlow({
 
   function pickStock(productId: string) {
     if (!productId) {
-      setForm((f) => ({ ...f, product_id: null, available: undefined }));
+      setForm((f) => ({ ...f, product_id: null, product_name: '', description: '', available: undefined }));
       return;
     }
     const p = stock.find((s) => s.id === Number(productId));
@@ -261,7 +261,7 @@ export default function BillingFlow({
       product_name: p.productName,
       metal: p.metal,
       weight: Number(p.weight) > 0 ? String(Number(p.weight)) : f.weight,
-      description: f.description || p.description || '',
+      description: p.description || '',
       available: p.quantity,
     }));
   }
@@ -288,7 +288,7 @@ export default function BillingFlow({
     const item: DraftItem = {
       ...(form as DraftItem),
       key: editingKey ?? keySeq++,
-      product_name: form.product_name.trim() || form.description.trim() || t(`categories.${form.category}`),
+      product_name: (form.product_id && form.product_name.trim()) || t(`categories.${form.category}`),
     };
     setItems((list) => (editingKey ? list.map((i) => (i.key === editingKey ? item : i)) : [...list, item]));
     setEditingKey(null);
@@ -400,6 +400,23 @@ export default function BillingFlow({
     }
   }
 
+  /** Live invoice preview shown beside the form while the bill is being built. */
+  const livePreview = (
+    <div className="no-print order-2 min-w-0 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto">
+      <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted">
+        <span className="relative flex h-2 w-2">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+        </span>
+        {t('retail.livePreview')}
+      </p>
+      {/* Scaled slightly on wide screens so the whole invoice fits beside the form. */}
+      <div className="xl:[zoom:0.72] 2xl:[zoom:0.85]">
+        <InvoiceView invoice={draftInvoice} draft />
+      </div>
+    </div>
+  );
+
   const steps = [ownerStepLabel, t('retail.steps.products'), t('retail.steps.discount'), t('retail.steps.bill')];
   const goToStep = (i: number) => {
     if (saved) return;
@@ -449,7 +466,9 @@ export default function BillingFlow({
       )}
 
       {step === 1 && (
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,420px)_1fr]">
+        <div className="grid items-start gap-5 xl:grid-cols-[440px_minmax(0,1fr)]">
+          {livePreview}
+          <div className="order-1 space-y-5">
           <Card>
             <CardHeader title={editingKey ? t('items.updateProduct') : t('items.addProduct')} subtitle={t('items.formula')} />
             <div className="grid gap-3 sm:grid-cols-2">
@@ -474,20 +493,6 @@ export default function BillingFlow({
                   value: p.id,
                   label: `${p.productName} · ${Number(p.weight).toFixed(3)} g · ${t('items.available', { count: p.quantity })}`,
                 }))}
-                wrapClassName="sm:col-span-2"
-              />
-              <Input
-                label={t('items.productName')}
-                value={form.product_name}
-                onChange={(e) => setField('product_name', e.target.value)}
-                maxLength={150}
-                wrapClassName="sm:col-span-2"
-              />
-              <Textarea
-                label={t('items.description')}
-                value={form.description}
-                onChange={(e) => setField('description', e.target.value)}
-                maxLength={1000}
                 wrapClassName="sm:col-span-2"
               />
               <Select
@@ -587,57 +592,29 @@ export default function BillingFlow({
           <Card>
             <CardHeader title={t('items.title')} subtitle={`${items.length} · ${formatWeight(mgToNumber(totals.totalWeightMg))}`} />
             {items.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-line py-12 text-center text-sm text-muted">{t('items.noItems')}</p>
+              <p className="rounded-xl border border-dashed border-line py-10 text-center text-sm text-muted">{t('items.noItems')}</p>
             ) : (
-              <div className="overflow-x-auto rounded-xl border border-line">
-                <table className="tabular w-full min-w-[720px] text-sm">
-                  <thead className="bg-surface-2/70 text-xs uppercase tracking-wide text-muted">
-                    <tr>
-                      <th className="px-3 py-2 text-left">{t('invoice.product')}</th>
-                      <th className="px-3 py-2 text-right">{t('invoice.weight')}</th>
-                      <th className="px-3 py-2 text-right">{t('invoice.qty')}</th>
-                      <th className="px-3 py-2 text-right">{t('invoice.goldAmount')}</th>
-                      <th className="px-3 py-2 text-right">{t('invoice.making')}</th>
-                      <th className="px-3 py-2 text-right">{t('invoice.discount')}</th>
-                      <th className="px-3 py-2 text-right">{t('invoice.amount')}</th>
-                      <th className="px-3 py-2" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-line">
-                    {items.map((it, i) => (
-                      <tr key={it.key} className={cx(editingKey === it.key && 'bg-gold-50 dark:bg-gold-900/20')}>
-                        <td className="px-3 py-2">
-                          <p className="font-medium text-ink">{it.product_name}</p>
-                          <p className="text-xs text-muted">
-                            {t(`categories.${it.category}`)} · {t(`metals.${it.metal}`)} · {formatMoney(rateFor(it.metal))}/g
-                          </p>
-                        </td>
-                        <td className="px-3 py-2 text-right">{Number(it.weight).toFixed(3)}</td>
-                        <td className="px-3 py-2 text-right">{it.quantity}</td>
-                        <td className="px-3 py-2 text-right">{formatMoney(paiseToNumber(lineCalcs[i].goldAmount))}</td>
-                        <td className="px-3 py-2 text-right">{formatMoney(paiseToNumber(lineCalcs[i].making))}</td>
-                        <td className="px-3 py-2 text-right">
-                          {formatMoney(paiseToNumber(lineCalcs[i].discount))}
-                          {it.discount_mode === 'percent' && Number(it.discount) > 0 && (
-                            <span className="block text-xs text-muted">({Number(it.discount)}%)</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-right font-semibold">{formatMoney(paiseToNumber(lineCalcs[i].total))}</td>
-                        <td className="px-3 py-2">
-                          <div className="flex justify-end gap-1">
-                            <button onClick={() => editItem(it)} className="rounded-md p-1.5 text-muted hover:bg-surface-2 hover:text-ink" aria-label={t('common.edit')}>
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                            <button onClick={() => removeItem(it.key)} className="rounded-md p-1.5 text-muted hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20" aria-label={t('common.remove')}>
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ul className="divide-y divide-line rounded-xl border border-line">
+                {items.map((it, i) => (
+                  <li key={it.key} className={cx('flex items-center gap-3 px-3 py-2.5', editingKey === it.key && 'bg-gold-50 dark:bg-gold-900/20')}>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-ink">{it.product_name}</p>
+                      <p className="tabular text-xs text-muted">
+                        {t(`metals.${it.metal}`)} · {Number(it.weight).toFixed(3)} g × {it.quantity}
+                      </p>
+                    </div>
+                    <span className="tabular text-sm font-semibold text-ink">{formatMoney(paiseToNumber(lineCalcs[i].total))}</span>
+                    <div className="flex gap-0.5">
+                      <button onClick={() => editItem(it)} className="rounded-md p-1.5 text-muted hover:bg-surface-2 hover:text-ink" aria-label={t('common.edit')}>
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button onClick={() => removeItem(it.key)} className="rounded-md p-1.5 text-muted hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20" aria-label={t('common.remove')}>
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
             )}
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-muted">
@@ -653,11 +630,14 @@ export default function BillingFlow({
               </div>
             </div>
           </Card>
+          </div>
         </div>
       )}
 
       {step === 2 && (
-        <div className="grid gap-5 lg:grid-cols-2">
+        <div className="grid items-start gap-5 xl:grid-cols-[440px_minmax(0,1fr)]">
+          {livePreview}
+          <div className="order-1 space-y-5">
           <Card>
             <CardHeader title={t('totals.summary')} />
             <TotalsSummary totals={totals} />
@@ -771,6 +751,7 @@ export default function BillingFlow({
               </Button>
             </div>
           </Card>
+          </div>
         </div>
       )}
 
@@ -791,6 +772,9 @@ export default function BillingFlow({
             </Button>
             <Button variant="ghost" icon={Download} disabled title={t('retail.saveInvoice')}>
               {t('common.downloadPdf')}
+            </Button>
+            <Button variant="outline" icon={Pencil} onClick={() => setStep(1)}>
+              {t('retail.editBill')}
             </Button>
           </div>
           <InvoiceView invoice={draftInvoice} draft />

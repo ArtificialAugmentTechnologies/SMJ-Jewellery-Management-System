@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Mail, Pencil, Phone, ShoppingBag, UserPlus } from 'lucide-react';
+import { ArrowLeft, Info, Mail, Pencil, Phone, SearchX, ShoppingBag, UserPlus } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { useToast } from '../context/AppProviders';
 import { api, ApiError } from '../lib/api';
@@ -23,25 +23,48 @@ export default function CustomersPage() {
     [debounced, limit],
   );
 
+  // "Add Customer" is offered only after a real search (3+ characters) has finished with no match,
+  // so staff always check for an existing record before creating a new one.
+  const query = search.trim();
+  const searched = query.length >= 3 && debounced.trim() === query && !loading && !!data;
+  const noMatch = searched && data.total === 0;
+  // Carry what was typed into the new-customer form.
+  const prefill = /^[0-9+s-]+$/.test(query)
+    ? { mobile: digitsOnly(query).slice(-10), name: '', email: '' }
+    : query.includes('@')
+      ? { mobile: '', name: '', email: query }
+      : { mobile: '', name: query, email: '' };
+
   return (
     <div>
-      <PageHeader
-        title={t('customers.title')}
-        subtitle={t('customers.subtitle')}
-        actions={
-          <Button icon={UserPlus} onClick={() => setAdding(true)}>
-            {t('customers.add')}
-          </Button>
-        }
-      />
+      <PageHeader title={t('customers.title')} subtitle={t('customers.subtitle')} />
       <Card>
         <Input
           placeholder={t('customers.searchPlaceholder')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          wrapClassName="mb-4 sm:w-96"
+          wrapClassName="mb-3 sm:w-96"
           aria-label={t('common.search')}
+          autoFocus
         />
+        {!noMatch && (
+          <p className="mb-4 flex items-start gap-2 text-xs text-muted">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            {t('customers.searchFirst', { add: t('customers.add') })}
+          </p>
+        )}
+        {noMatch ? (
+          <div className="animate-fade-in flex flex-col items-center rounded-xl border border-dashed border-line bg-surface-2/50 px-6 py-10 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-gold-50 text-gold-600 dark:bg-gold-900/40 dark:text-gold-300">
+              <SearchX className="h-6 w-6" />
+            </span>
+            <p className="mt-3 font-medium text-ink">{t('customers.notFound', { query })}</p>
+            <p className="mt-1 max-w-md text-sm text-muted">{t('customers.notFoundHint')}</p>
+            <Button icon={UserPlus} className="mt-5" onClick={() => setAdding(true)}>
+              {t('customers.add')}
+            </Button>
+          </div>
+        ) : (
         <DataTable
           rows={data?.data ?? []}
           loading={loading && !data}
@@ -57,7 +80,8 @@ export default function CustomersPage() {
             { key: 'l', header: t('customers.lastPurchase'), render: (r) => (r.lastPurchase ? formatDate(r.lastPurchase, lang) : '—'), hideSm: true },
           ]}
         />
-        {data && data.data.length < data.total && (
+        )}
+        {!noMatch && data && data.data.length < data.total && (
           <div className="mt-4 flex items-center justify-between text-sm text-muted">
             <span>{t('common.showing', { count: data.data.length, total: data.total })}</span>
             <Button variant="outline" size="sm" onClick={() => setLimit((l) => l + 50)}>
@@ -68,10 +92,13 @@ export default function CustomersPage() {
       </Card>
       <NewCustomerModal
         open={adding}
-        mobile=""
+        mobile={prefill.mobile}
+        initialName={prefill.name}
+        initialEmail={prefill.email}
         onClose={() => setAdding(false)}
         onCreated={() => {
           setAdding(false);
+          setSearch('');
           reload();
         }}
       />
