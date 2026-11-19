@@ -1,10 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   BarChart3,
   Boxes,
+  Check,
+  ChevronDown,
   Coins,
   Gem,
+  Languages,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -17,13 +20,17 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { useI18n } from '../../i18n';
+import { LANGS, useI18n, type Lang } from '../../i18n';
 import { useAuth, useRate, useTheme } from '../../context/AppProviders';
 import { formatMoney } from '../../lib/format';
 import { cx } from '../ui';
+import { DailyRateReminder, OPEN_RATE_REMINDER_EVENT, isRateStale } from './DailyRateReminder';
+
+/** Developer credit shown in the sidebar and on the login page (not translated: it is a company name). */
+export const CREDIT = 'Created by Artificial Augment Technologies';
 
 export function Logo({ size = 40 }: { size?: number }) {
-  return <img src="/logo.svg" width={size} height={size} alt="SMJ Jewellery" className="shrink-0" />;
+  return <img src="/logo-mark.png" width={size} height={size} alt="SMJ Jewellery" className="shrink-0 rounded-lg object-cover" />;
 }
 
 const NAV = [
@@ -39,23 +46,77 @@ const NAV = [
   { to: '/settings', key: 'nav.settings', icon: Settings },
 ];
 
+const LANG_LABELS: Record<Lang, { native: string; english: string }> = {
+  en: { native: 'English', english: 'English' },
+  hi: { native: 'हिन्दी', english: 'Hindi' },
+  ta: { native: 'தமிழ்', english: 'Tamil' },
+};
+
+/** Language dropdown listing every supported language. */
 export function LanguageToggle({ compact = false }: { compact?: boolean }) {
-  const { lang, setLang } = useI18n();
+  const { lang, setLang, t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
   return (
-    <div className="inline-flex rounded-lg border border-line bg-surface p-0.5 text-xs font-medium" role="group" aria-label="Language">
-      {(['en', 'ta'] as const).map((l) => (
-        <button
-          key={l}
-          onClick={() => setLang(l)}
-          aria-pressed={lang === l}
-          className={cx(
-            'rounded-md px-2.5 py-1.5 transition-colors',
-            lang === l ? 'bg-gold-100 text-gold-800 dark:bg-gold-900/60 dark:text-gold-100' : 'text-muted hover:text-ink',
-          )}
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={t('common.language')}
+        className="flex h-9 items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-xs font-medium text-ink transition-colors hover:bg-surface-2"
+      >
+        <Languages className="h-4 w-4 text-gold-600 dark:text-gold-300" />
+        <span className={compact ? 'max-sm:hidden' : undefined}>{LANG_LABELS[lang].native}</span>
+        <ChevronDown className={cx('h-3.5 w-3.5 text-muted transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <ul
+          role="listbox"
+          aria-label={t('common.language')}
+          className="animate-fade-in absolute right-0 z-50 mt-2 w-48 overflow-hidden rounded-xl border border-line bg-surface p-1 shadow-xl shadow-black/10"
         >
-          {l === 'en' ? (compact ? 'EN' : 'English') : 'தமிழ்'}
-        </button>
-      ))}
+          {LANGS.map((l) => (
+            <li key={l} role="option" aria-selected={lang === l}>
+              <button
+                type="button"
+                onClick={() => {
+                  setLang(l);
+                  setOpen(false);
+                }}
+                className={cx(
+                  'flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors',
+                  lang === l ? 'bg-gold-50 text-gold-800 dark:bg-gold-900/40 dark:text-gold-100' : 'text-ink hover:bg-surface-2',
+                )}
+              >
+                <span className="font-medium">{LANG_LABELS[l].native}</span>
+                <span className="flex items-center gap-1.5 text-xs text-muted">
+                  {l !== 'en' && LANG_LABELS[l].english}
+                  {lang === l && <Check className="h-4 w-4 text-gold-600 dark:text-gold-300" />}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -80,14 +141,15 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { user, logout } = useAuth();
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-3 px-5 py-5">
+      <div className="flex h-16 shrink-0 items-center gap-3 px-5">
         <Logo size={40} />
         <div className="min-w-0">
           <p className="font-display text-lg font-semibold leading-tight text-white">{t('app.name')}</p>
           <p className="truncate text-xs text-white/70">{t('app.tagline')}</p>
         </div>
       </div>
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-4" aria-label={t('nav.menu')}>
+      <div className="glow-line glow-line-light" aria-hidden />
+      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4" aria-label={t('nav.menu')}>
         {NAV.map(({ to, key, icon: Icon, end }) => (
           <NavLink
             key={to}
@@ -112,6 +174,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           </NavLink>
         ))}
       </nav>
+      <p className="whitespace-nowrap px-3 pb-3 text-center text-[10px] tracking-tight text-white/60">{CREDIT}</p>
       <div className="border-t border-white/15 p-4">
         <div className="flex items-center gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/20 text-sm font-semibold text-white">
@@ -140,17 +203,33 @@ function RatePill() {
       </NavLink>
     );
   }
+  if (isRateStale(rate)) {
+    return (
+      <button
+        type="button"
+        onClick={() => window.dispatchEvent(new Event(OPEN_RATE_REMINDER_EVENT))}
+        className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200"
+      >
+        <span className="relative flex h-2 w-2">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
+        </span>
+        <span className="max-sm:hidden">{t('reminder.due')}</span>
+        <span className="tabular sm:hidden">{formatMoney(rate.silverRatePerGram)}</span>
+      </button>
+    );
+  }
   return (
     <NavLink to="/gold-rate" className="flex items-center gap-3 rounded-lg border border-gold-200 bg-gold-50/70 px-3 py-1.5 text-xs dark:border-gold-800 dark:bg-gold-900/20">
       <span className="flex items-center gap-1.5">
-        <span className="h-2 w-2 rounded-full bg-gold-500" />
-        <span className="hidden text-muted md:inline">{t('rate.gold')}</span>
-        <span className="tabular font-semibold text-gold-800 dark:text-gold-200">{formatMoney(rate.goldRatePerGram)}</span>
-      </span>
-      <span className="hidden items-center gap-1.5 sm:flex">
         <span className="h-2 w-2 rounded-full bg-stone-400" />
         <span className="hidden text-muted md:inline">{t('rate.silver')}</span>
-        <span className="tabular font-semibold text-ink">{formatMoney(rate.silverRatePerGram)}</span>
+        <span className="tabular font-semibold text-gold-800 dark:text-gold-200">{formatMoney(rate.silverRatePerGram)}</span>
+      </span>
+      <span className="hidden items-center gap-1.5 sm:flex">
+        <span className="h-2 w-2 rounded-full bg-amber-400" />
+        <span className="hidden text-muted md:inline">{t('rate.gold')}</span>
+        <span className="tabular font-semibold text-ink">{formatMoney(rate.goldRatePerGram)}</span>
       </span>
     </NavLink>
   );
@@ -188,7 +267,7 @@ export default function AppLayout() {
       )}
 
       <div className="lg:pl-64">
-        <header className="no-print sticky top-0 z-20 border-b border-line bg-bg/85 backdrop-blur">
+        <header className="no-print sticky top-0 z-20 bg-bg/85 backdrop-blur">
           <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
             <button
               onClick={() => setOpen(true)}
@@ -207,10 +286,12 @@ export default function AppLayout() {
               <ThemeToggle />
             </div>
           </div>
+          <div className="glow-line glow-line-brand" aria-hidden />
         </header>
         <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:py-8">
           <Outlet />
         </main>
+        <DailyRateReminder />
       </div>
     </div>
   );

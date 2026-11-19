@@ -46,8 +46,8 @@
   --color-gold-800: #4b2a7e;
   --color-gold-900: #34205a;
 
-  --font-sans: 'Inter', 'Noto Sans Tamil', ui-sans-serif, system-ui, sans-serif;
-  --font-display: 'Playfair Display', 'Noto Sans Tamil', Georgia, serif;
+  --font-sans: 'Inter', 'Noto Sans Tamil', 'Noto Sans Devanagari', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Playfair Display', 'Noto Sans Tamil', 'Noto Sans Devanagari', Georgia, serif;
 
   --animate-fade-in: fade-in 180ms ease-out;
   --animate-slide-up: slide-up 220ms ease-out;
@@ -101,6 +101,117 @@ input[type='number'] {
 
 .tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/* ---- Login page & animated dividers ------------------------------------------ */
+.login-page {
+  background-color: #f5f0e8;
+}
+.dark .login-page {
+  background-color: #110c19;
+}
+.login-bg-rosette {
+  color: rgba(75, 42, 126, 0.12);
+  will-change: transform;
+}
+.dark .login-bg-rosette {
+  color: rgba(255, 255, 255, 0.07);
+}
+.login-panel {
+  background:
+    radial-gradient(80% 60% at 50% 0%, rgba(167, 139, 250, 0.22), transparent 70%),
+    #2b1748;
+}
+
+/* Minted coin */
+.coin-face {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.coin-front {
+  background: repeating-conic-gradient(from 0deg, #f6e3a8 0deg 2.5deg, #b8892f 2.5deg 5deg);
+}
+.coin-back {
+  transform: rotateY(180deg);
+  background: repeating-conic-gradient(from 0deg, #f1f5f9 0deg 2.5deg, #94a3b8 2.5deg 5deg);
+}
+.coin-silver {
+  background: radial-gradient(circle at 35% 30%, #ffffff 0%, #e2e8f0 45%, #b6bfcc 100%);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.7), inset 0 -6px 14px rgba(71, 85, 105, 0.35);
+}
+.coin-glint {
+  background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, 0.55) 50%, transparent 65%);
+  transform: translateX(-120%);
+  pointer-events: none;
+}
+
+/* A 1px line with a highlight that sweeps across it. */
+.glow-line {
+  position: relative;
+  height: 1px;
+  overflow: hidden;
+  background: var(--glow-base);
+}
+.glow-line::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 35%;
+  background: linear-gradient(90deg, transparent, var(--glow-color), transparent);
+  transform: translateX(-100%);
+}
+.glow-line-light {
+  --glow-base: rgba(255, 255, 255, 0.18);
+  --glow-color: rgba(255, 255, 255, 0.95);
+  margin-inline: 1rem;
+}
+.glow-line-brand {
+  --glow-base: var(--border);
+  --glow-color: var(--color-gold-500);
+  height: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .login-bg-rosette { animation: login-spin 240s linear infinite; }
+  .login-rosette { animation: login-spin 60s linear infinite reverse; }
+  .login-coin { animation: coin-flip 9s cubic-bezier(0.65, 0, 0.35, 1) 1.2s infinite; }
+  .login-coin-shadow { animation: coin-shadow 9s cubic-bezier(0.65, 0, 0.35, 1) 1.2s infinite; }
+  .coin-glint { animation: coin-glint 4.5s ease-in-out 0.6s infinite; }
+  .login-card { animation: login-card 700ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .login-rise { opacity: 0; animation: login-rise 600ms ease-out forwards; }
+  .glow-line::after { animation: glow-sweep 4s ease-in-out infinite; }
+}
+
+@keyframes login-spin {
+  to { transform: rotate(360deg); }
+}
+/* Hold the front, flip to the silver reverse, hold, flip back. */
+@keyframes coin-flip {
+  0%, 35% { transform: translateY(0) rotateY(0deg); }
+  42% { transform: translateY(-10px) rotateY(90deg); }
+  50%, 85% { transform: translateY(0) rotateY(180deg); }
+  92% { transform: translateY(-10px) rotateY(270deg); }
+  100% { transform: translateY(0) rotateY(360deg); }
+}
+@keyframes coin-shadow {
+  0%, 35%, 50%, 85%, 100% { transform: translateX(-50%) scaleX(1); opacity: 1; }
+  42%, 92% { transform: translateX(-50%) scaleX(0.75); opacity: 0.6; }
+}
+@keyframes coin-glint {
+  0% { transform: translateX(-120%); }
+  45%, 100% { transform: translateX(120%); }
+}
+@keyframes login-card {
+  from { opacity: 0; transform: translateY(24px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes login-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes glow-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
 }
 
 /* ---- Printing: only the invoice is printed ------------------------------------ */

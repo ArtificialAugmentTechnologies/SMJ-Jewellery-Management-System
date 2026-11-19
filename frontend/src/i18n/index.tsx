@@ -1,9 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import en from './en';
 import ta from './ta';
+import hi from './hi';
 
-export type Lang = 'en' | 'ta';
-const dictionaries = { en, ta } as const;
+export type Lang = 'en' | 'ta' | 'hi';
+export const LANGS: Lang[] = ['en', 'hi', 'ta'];
+const dictionaries = { en, ta, hi } as const;
 const STORAGE_KEY = 'smj.lang';
 
 type Vars = Record<string, string | number>;
@@ -38,7 +40,7 @@ const I18nContext = createContext<I18nValue | null>(null);
 function initialLang(): Lang {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved === 'en' || saved === 'ta') return saved;
+    if (saved === 'en' || saved === 'ta' || saved === 'hi') return saved;
   } catch {
     /* ignore */
   }

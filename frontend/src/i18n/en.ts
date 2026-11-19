@@ -70,6 +70,7 @@ const en = {
     dark: 'Dark',
     english: 'English',
     tamil: 'தமிழ்',
+    hindi: 'हिन्दी',
     pieces: 'pcs',
     grams: 'g',
     adminOnly: 'Only administrators can do this',
@@ -503,6 +504,15 @@ const en = {
     you: 'You',
     store: 'Store Details',
     storeHint: 'Shown on invoices. Configure with VITE_STORE_* variables in frontend/.env.',
+  },
+  reminder: {
+    title: "Update today's rate",
+    body: "Rates change every day at 7:00 AM (IST). Please enter today's silver rate before billing.",
+    staffBody: "Today's rate has not been updated yet. Please ask an administrator to update it before billing.",
+    lastRate: 'Last updated {date}',
+    later: 'Remind me later',
+    save: "Save today's rate",
+    due: "Update today's rate",
   },
   errors: {
     network_error: 'Cannot reach the server. Please check that the backend is running.',

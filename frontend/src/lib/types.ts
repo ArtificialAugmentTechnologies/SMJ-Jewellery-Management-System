@@ -7,7 +7,7 @@ export type PaymentMethod = 'cash' | 'card' | 'upi' | 'bank_transfer' | 'cheque'
 export type MovementType = 'inward' | 'outward' | 'sold' | 'returned';
 
 export const CATEGORIES: Category[] = ['Tumbler', 'Chain', 'Anklet', 'Ring'];
-export const METALS: Metal[] = ['gold', 'silver'];
+export const METALS: Metal[] = ['silver', 'gold'];
 export const PARTY_TYPES: PartyType[] = ['party', 'shopkeeper', 'line_member'];
 export const PAYMENT_METHODS: PaymentMethod[] = ['cash', 'upi', 'card', 'bank_transfer', 'cheque', 'other'];
 

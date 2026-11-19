@@ -154,7 +154,7 @@ const emptyItem = (category: Category | '' = ''): Omit<DraftItem, 'key' | 'categ
   product_id: null,
   product_name: '',
   category,
-  metal: 'gold',
+  metal: 'silver',
   description: '',
   weight: '',
   quantity: '1',

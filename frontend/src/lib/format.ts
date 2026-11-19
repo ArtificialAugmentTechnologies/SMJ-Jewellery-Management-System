@@ -11,7 +11,7 @@ export function parseDate(value: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-const locale = (lang: Lang) => (lang === 'ta' ? 'ta-IN' : 'en-IN');
+const locale = (lang: Lang) => (lang === 'ta' ? 'ta-IN' : lang === 'hi' ? 'hi-IN' : 'en-IN');
 const TZ = 'Asia/Kolkata';
 
 export function formatDate(value: unknown, lang: Lang = 'en') {

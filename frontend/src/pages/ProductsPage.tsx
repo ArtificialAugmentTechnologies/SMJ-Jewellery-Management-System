@@ -120,7 +120,7 @@ export default function ProductsPage() {
 function ProductFormModal({ product, open, onClose, onSaved }: { product: Product | null; open: boolean; onClose: () => void; onSaved: () => void }) {
   const { t, te } = useI18n();
   const notify = useToast();
-  const blank = { product_name: '', category: 'Ring' as Category, metal: 'gold' as Metal, description: '', weight: '', purchase_price: '0' };
+  const blank = { product_name: '', category: 'Ring' as Category, metal: 'silver' as Metal, description: '', weight: '', purchase_price: '0' };
   const [form, setForm] = useState(blank);
   const [saving, setSaving] = useState(false);
   const [openedFor, setOpenedFor] = useState<string | null>(null);

@@ -47,16 +47,16 @@ export default function DashboardPage() {
           <div className="relative flex flex-wrap items-end justify-between gap-6">
             <div>
               <p className="flex items-center gap-2 text-sm font-medium text-white/85">
-                <Coins className="h-4 w-4" /> {t('rate.todayGold')}
+                <Coins className="h-4 w-4" /> {t('rate.todaySilver')}
               </p>
               <p className="tabular mt-2 font-display text-4xl font-semibold sm:text-5xl">
-                {rate ? formatMoney(rate.goldRatePerGram) : t('rate.notSet')}
+                {rate ? formatMoney(rate.silverRatePerGram) : t('rate.notSet')}
               </p>
               <p className="text-sm text-white/80">{t('rate.perGram')}</p>
             </div>
             <div className="rounded-xl bg-white/15 px-4 py-3 backdrop-blur-sm">
-              <p className="text-xs font-medium text-white/85">{t('rate.todaySilver')}</p>
-              <p className="tabular mt-1 text-2xl font-semibold">{rate ? formatMoney(rate.silverRatePerGram) : '—'}</p>
+              <p className="text-xs font-medium text-white/85">{t('rate.todayGold')}</p>
+              <p className="tabular mt-1 text-2xl font-semibold">{rate ? formatMoney(rate.goldRatePerGram) : '—'}</p>
               <p className="text-xs text-white/80">{t('rate.perGram')}</p>
             </div>
           </div>

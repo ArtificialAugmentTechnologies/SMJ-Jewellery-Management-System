@@ -95,7 +95,7 @@ function InwardForm({ onSaved }: { onSaved: () => void }) {
     product_id: '',
     product_name: '',
     category: 'Ring' as Category,
-    metal: 'gold' as Metal,
+    metal: 'silver' as Metal,
     description: '',
     weight: '',
     quantity: '',
