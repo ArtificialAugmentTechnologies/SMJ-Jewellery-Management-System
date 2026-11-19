@@ -83,8 +83,8 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       <div className="flex items-center gap-3 px-5 py-5">
         <Logo size={40} />
         <div className="min-w-0">
-          <p className="font-display text-lg font-semibold leading-tight text-ink">{t('app.name')}</p>
-          <p className="truncate text-xs text-muted">{t('app.tagline')}</p>
+          <p className="font-display text-lg font-semibold leading-tight text-white">{t('app.name')}</p>
+          <p className="truncate text-xs text-white/70">{t('app.tagline')}</p>
         </div>
       </div>
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-4" aria-label={t('nav.menu')}>
@@ -98,30 +98,30 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               cx(
                 'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all',
                 isActive
-                  ? 'bg-gold-100/80 text-gold-900 dark:bg-gold-900/40 dark:text-gold-100'
-                  : 'text-muted hover:bg-surface-2 hover:text-ink',
+                  ? 'bg-white/20 text-white shadow-sm ring-1 ring-white/25'
+                  : 'text-white/75 hover:bg-white/10 hover:text-white',
               )
             }
           >
             {({ isActive }) => (
               <>
-                <Icon className={cx('h-[18px] w-[18px] shrink-0', isActive ? 'text-gold-700 dark:text-gold-300' : '')} />
+                <Icon className={cx('h-[18px] w-[18px] shrink-0', isActive ? 'text-white' : '')} />
                 <span className="truncate">{t(key)}</span>
               </>
             )}
           </NavLink>
         ))}
       </nav>
-      <div className="border-t border-line p-4">
+      <div className="border-t border-white/15 p-4">
         <div className="flex items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gold-100 text-sm font-semibold text-gold-800 dark:bg-gold-900/50 dark:text-gold-200">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/20 text-sm font-semibold text-white">
             {user?.name?.slice(0, 1).toUpperCase()}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-ink">{user?.name}</p>
-            <p className="text-xs text-muted">{user ? t(`roles.${user.role}`) : ''}</p>
+            <p className="truncate text-sm font-medium text-white">{user?.name}</p>
+            <p className="text-xs text-white/70">{user ? t(`roles.${user.role}`) : ''}</p>
           </div>
-          <button onClick={logout} className="rounded-lg p-2 text-muted hover:bg-surface-2 hover:text-ink" title={t('nav.signOut')} aria-label={t('nav.signOut')}>
+          <button onClick={logout} className="rounded-lg p-2 text-white/75 hover:bg-white/10 hover:text-white" title={t('nav.signOut')} aria-label={t('nav.signOut')}>
             <LogOut className="h-4 w-4" />
           </button>
         </div>
@@ -166,7 +166,7 @@ export default function AppLayout() {
   return (
     <div className="min-h-screen bg-bg">
       {/* Desktop sidebar */}
-      <aside className="no-print fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-line bg-surface lg:block">
+      <aside className="no-print fixed inset-y-0 left-0 z-30 hidden w-64 sidebar-gradient lg:block">
         <Sidebar />
       </aside>
 
@@ -174,10 +174,10 @@ export default function AppLayout() {
       {open && (
         <div className="no-print fixed inset-0 z-40 lg:hidden">
           <div className="animate-fade-in absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
-          <aside className="animate-slide-up absolute inset-y-0 left-0 w-72 max-w-[85vw] border-r border-line bg-surface shadow-xl">
+          <aside className="animate-slide-up absolute inset-y-0 left-0 w-72 max-w-[85vw] sidebar-gradient shadow-xl">
             <button
               onClick={() => setOpen(false)}
-              className="absolute right-3 top-5 rounded-lg p-1.5 text-muted hover:bg-surface-2"
+              className="absolute right-3 top-5 rounded-lg p-1.5 text-white/80 hover:bg-white/10"
               aria-label={t('common.close')}
             >
               <X className="h-5 w-5" />

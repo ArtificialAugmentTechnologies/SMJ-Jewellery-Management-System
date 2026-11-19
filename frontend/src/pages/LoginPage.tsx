@@ -43,7 +43,7 @@ export default function LoginPage() {
           className="absolute inset-0 opacity-20"
           style={{
             backgroundImage:
-              'radial-gradient(circle at 20% 20%, #fff 0, transparent 35%), radial-gradient(circle at 80% 70%, #fff7e0 0, transparent 40%)',
+              'radial-gradient(circle at 20% 20%, #fff 0, transparent 35%), radial-gradient(circle at 80% 70%, #e9ddff 0, transparent 40%)',
           }}
         />
         <div className="relative flex h-full flex-col justify-between p-12 text-white">
