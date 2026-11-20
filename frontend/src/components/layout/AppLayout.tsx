@@ -145,7 +145,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <Logo size={40} />
         <div className="min-w-0">
           <p className="font-display text-lg font-semibold leading-tight text-white">{t('app.name')}</p>
-          <p className="truncate text-xs text-white/70">{t('app.tagline')}</p>
+          <p className="text-[11px] leading-tight text-white/70">{t('app.tagline')}</p>
         </div>
       </div>
       <div className="glow-line glow-line-light" aria-hidden />

@@ -20,6 +20,7 @@ const StockPage = lazy(() => import('./pages/StockPage'));
 const GoldRatePage = lazy(() => import('./pages/GoldRatePage'));
 const BillingPage = lazy(() => import('./pages/BillingPage'));
 const InvoicePage = lazy(() => import('./pages/BillingPage').then((m) => ({ default: m.InvoicePage })));
+const InvoiceEditPage = lazy(() => import('./pages/BillingPage').then((m) => ({ default: m.InvoiceEditPage })));
 const ReportsPage = lazy(() => import('./pages/ReportsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 
@@ -62,6 +63,7 @@ export default function App() {
                       <Route path="gold-rate" element={<GoldRatePage />} />
                       <Route path="billing" element={<BillingPage />} />
                       <Route path="billing/:id" element={<InvoicePage />} />
+                      <Route path="billing/:id/edit" element={<InvoiceEditPage />} />
                       <Route path="reports" element={<ReportsPage />} />
                       <Route path="settings" element={<SettingsPage />} />
                       <Route path="*" element={<Navigate to="/" replace />} />

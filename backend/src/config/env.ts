@@ -20,6 +20,8 @@ const schema = z.object({
   JWT_EXPIRES_IN: z.string().default('12h'),
   CORS_ORIGINS: z.string().default('http://localhost:5173'),
   TRUST_PROXY: z.coerce.number().int().min(0).default(0),
+  // Mobile numbers allowed to sign in with mobile + OTP (comma-separated). Empty = mobile sign-in disabled.
+  MOBILE_LOGIN_NUMBERS: z.string().default(''),
 });
 
 const parsed = schema.safeParse(process.env);
@@ -37,5 +39,8 @@ export const env = {
   corsOrigins: parsed.data.CORS_ORIGINS.split(',')
     .map((o) => o.trim())
     .filter(Boolean),
+  mobileLoginNumbers: parsed.data.MOBILE_LOGIN_NUMBERS.split(',')
+    .map((n) => n.replace(/D/g, '').slice(-10))
+    .filter((n) => n.length === 10),
   isProduction: parsed.data.NODE_ENV === 'production',
 };

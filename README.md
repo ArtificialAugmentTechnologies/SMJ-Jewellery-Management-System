@@ -1,4 +1,4 @@
-# SMJ Jewellery – Store Management System
+# SMJ Jewellery – Inventory Management System
 
 A full-stack jewellery store management application. It covers retail billing, wholesale distribution (parties, shopkeepers, line members), inventory with an audited stock ledger, gold and silver rate management, invoices (print and PDF), and reports. The interface is available in **English and Tamil**, in **light and dark** themes.
 

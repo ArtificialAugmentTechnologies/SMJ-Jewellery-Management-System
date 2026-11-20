@@ -12,7 +12,7 @@ import {
 import { badRequest, conflict, notFound } from '../utils/errors.js';
 import { calculateLine, fromMilligrams, fromPaise, toPaise } from '../utils/money.js';
 import { getCurrentRate } from './goldRateService.js';
-import { decrementStock, recordMovement, totalWeight } from './stockService.js';
+import { decrementStock, incrementStock, recordMovement, totalWeight } from './stockService.js';
 
 export interface InvoiceItemInput {
   product_id?: number | null;
@@ -52,50 +52,26 @@ export function paymentStatus(paid: bigint, total: bigint): 'paid' | 'partial' |
   return 'unpaid';
 }
 
-/**
- * Creates a completed invoice in a single transaction:
- *  - snapshots today's gold/silver rate on every line,
- *  - recalculates every amount on the server (client totals are never trusted),
- *  - deducts inventory for lines linked to a product and logs a "sold" movement,
- *  - records an optional initial payment.
- */
-export async function createInvoice(tx: Tx, input: CreateInvoiceInput) {
-  if (input.items.length === 0) throw badRequest('no_items', 'Add at least one product to the invoice');
+interface Line {
+  item: InvoiceItemInput;
+  productName: string;
+  category: InvoiceItemInput['category'];
+  metal: InvoiceItemInput['metal'];
+  lineRate: string;
+  calc: ReturnType<typeof calculateLine>;
+}
 
-  const rate = await getCurrentRate(tx);
-  if (!rate) throw conflict('no_gold_rate', "Today's gold rate has not been set. Ask an administrator to update it.");
-  if (input.goldRateId && input.goldRateId !== rate.id) {
-    throw conflict(
-      'rate_changed',
-      'The gold rate was updated while this bill was being prepared. Review the new rate and submit again.',
-      { currentRate: rate },
-    );
-  }
-
-  // Validate the owner.
-  if (input.type === 'retail') {
-    const [c] = await tx.select({ id: customers.id }).from(customers).where(eq(customers.id, input.customerId!));
-    if (!c) throw notFound('Customer');
-  } else {
-    const [p] = await tx
-      .select({ id: wholesaleParties.id, isActive: wholesaleParties.isActive })
-      .from(wholesaleParties)
-      .where(eq(wholesaleParties.id, input.partyId!));
-    if (!p) throw notFound('Wholesale party');
-    if (!p.isActive) throw badRequest('party_inactive', 'This wholesale party is inactive');
-  }
-
-  // Resolve products and compute every line.
-  interface Line {
-    item: InvoiceItemInput;
-    productName: string;
-    category: InvoiceItemInput['category'];
-    metal: InvoiceItemInput['metal'];
-    lineRate: string;
-    calc: ReturnType<typeof calculateLine>;
-  }
+/** Resolves products and recalculates every line and total on the server (client totals are never trusted). */
+async function computeInvoice(
+  tx: Tx,
+  items: InvoiceItemInput[],
+  overallDiscountInput: string,
+  gstRateInput: string | undefined,
+  rates: { gold: string; silver: string },
+) {
+  if (items.length === 0) throw badRequest('no_items', 'Add at least one product to the invoice');
   const lines: Line[] = [];
-  for (const [index, item] of input.items.entries()) {
+  for (const [index, item] of items.entries()) {
     let productName = item.product_name?.trim() || '';
     let category = item.category;
     let metal = item.metal;
@@ -108,7 +84,7 @@ export async function createInvoice(tx: Tx, input: CreateInvoiceInput) {
     }
     if (!productName) productName = item.description?.trim() || category;
 
-    const lineRate = metal === 'silver' ? rate.silverRatePerGram : rate.goldRatePerGram;
+    const lineRate = metal === 'silver' ? rates.silver : rates.gold;
     const calc = calculateLine({
       weight: item.weight,
       quantity: item.quantity,
@@ -132,18 +108,101 @@ export async function createInvoice(tx: Tx, input: CreateInvoiceInput) {
   const makingCharges = sum((l) => l.calc.makingCharges);
   const subtotal = goldAmount + makingCharges;
   const itemDiscount = sum((l) => l.calc.discount);
-  const overallDiscount = toPaise(input.overallDiscount || '0');
+  const overallDiscount = toPaise(overallDiscountInput || '0');
   const discount = itemDiscount + overallDiscount;
   const taxable = subtotal - discount;
   if (taxable < 0n) {
     throw badRequest('discount_exceeds_amount', 'Total discount cannot exceed the invoice subtotal');
   }
   // Optional GST on the taxable value, rounded half-up to the paisa.
-  const gstRateX100 = toPaise(input.gstRate || '0'); // 3% -> 300
+  const gstRateX100 = toPaise(gstRateInput || '0'); // 3% -> 300
   const gstAmount = (taxable * gstRateX100 * 2n + 10000n) / 20000n;
   const grandTotal = taxable + gstAmount;
 
+  return {
+    lines,
+    totals: { totalWeightMg, goldAmount, makingCharges, subtotal, itemDiscount, overallDiscount, discount, gstRateX100, gstAmount, grandTotal },
+  };
+}
+
+/** Inserts invoice lines and deducts stock (with a "sold" movement) for lines linked to a product. */
+async function writeLines(
+  tx: Tx,
+  invoice: { id: number; invoiceNumber: string; invoiceType: string; partyId: number | null },
+  lines: Line[],
+  userId: number,
+) {
+  for (const line of lines) {
+    await tx.insert(invoiceItems).values({
+      invoiceId: invoice.id,
+      productId: line.item.product_id ?? null,
+      productName: line.productName,
+      category: line.category,
+      metal: line.metal,
+      description: line.item.description ?? null,
+      weight: line.item.weight,
+      quantity: line.item.quantity,
+      goldRate: line.lineRate,
+      goldAmount: fromPaise(line.calc.goldAmount),
+      makingCharges: fromPaise(line.calc.makingCharges),
+      discount: fromPaise(line.calc.discount),
+      totalAmount: fromPaise(line.calc.total),
+    });
+
+    if (line.item.product_id) {
+      await decrementStock(tx, line.item.product_id, line.item.quantity);
+      await recordMovement(tx, {
+        productId: line.item.product_id,
+        movementType: 'sold',
+        quantity: line.item.quantity,
+        weight: totalWeight(line.item.weight, line.item.quantity),
+        toPartyId: invoice.invoiceType === 'wholesale' ? invoice.partyId : null,
+        referenceType: 'invoice',
+        referenceId: invoice.id,
+        createdBy: userId,
+        remarks: `${invoice.invoiceType === 'retail' ? 'Retail' : 'Wholesale'} sale - ${invoice.invoiceNumber}`,
+      });
+    }
+  }
+}
+
+/**
+ * Creates a completed invoice in a single transaction:
+ *  - snapshots today's gold/silver rate on every line,
+ *  - recalculates every amount on the server (client totals are never trusted),
+ *  - deducts inventory for lines linked to a product and logs a "sold" movement,
+ *  - records an optional initial payment.
+ */
+export async function createInvoice(tx: Tx, input: CreateInvoiceInput) {
+  const rate = await getCurrentRate(tx);
+  if (!rate) throw conflict('no_gold_rate', "Today's gold rate has not been set. Ask an administrator to update it.");
+  if (input.goldRateId && input.goldRateId !== rate.id) {
+    throw conflict(
+      'rate_changed',
+      'The gold rate was updated while this bill was being prepared. Review the new rate and submit again.',
+      { currentRate: rate },
+    );
+  }
+
+  // Validate the owner.
+  if (input.type === 'retail') {
+    const [c] = await tx.select({ id: customers.id }).from(customers).where(eq(customers.id, input.customerId!));
+    if (!c) throw notFound('Customer');
+  } else {
+    const [p] = await tx
+      .select({ id: wholesaleParties.id, isActive: wholesaleParties.isActive })
+      .from(wholesaleParties)
+      .where(eq(wholesaleParties.id, input.partyId!));
+    if (!p) throw notFound('Wholesale party');
+    if (!p.isActive) throw badRequest('party_inactive', 'This wholesale party is inactive');
+  }
+
   const paidNow = input.payment ? toPaise(input.payment.amount) : 0n;
+  const { lines, totals } = await computeInvoice(tx, input.items, input.overallDiscount, input.gstRate, {
+    gold: rate.goldRatePerGram,
+    silver: rate.silverRatePerGram,
+  });
+  const { totalWeightMg, goldAmount, makingCharges, subtotal, itemDiscount, overallDiscount, discount, gstRateX100, gstAmount, grandTotal } = totals;
   if (paidNow > grandTotal) {
     throw badRequest('payment_exceeds_total', 'Payment amount cannot exceed the grand total');
   }
@@ -181,38 +240,7 @@ export async function createInvoice(tx: Tx, input: CreateInvoiceInput) {
     })
     .returning();
 
-  for (const line of lines) {
-    await tx.insert(invoiceItems).values({
-      invoiceId: invoice.id,
-      productId: line.item.product_id ?? null,
-      productName: line.productName,
-      category: line.category,
-      metal: line.metal,
-      description: line.item.description ?? null,
-      weight: line.item.weight,
-      quantity: line.item.quantity,
-      goldRate: line.lineRate,
-      goldAmount: fromPaise(line.calc.goldAmount),
-      makingCharges: fromPaise(line.calc.makingCharges),
-      discount: fromPaise(line.calc.discount),
-      totalAmount: fromPaise(line.calc.total),
-    });
-
-    if (line.item.product_id) {
-      await decrementStock(tx, line.item.product_id, line.item.quantity);
-      await recordMovement(tx, {
-        productId: line.item.product_id,
-        movementType: 'sold',
-        quantity: line.item.quantity,
-        weight: totalWeight(line.item.weight, line.item.quantity),
-        toPartyId: input.type === 'wholesale' ? input.partyId : null,
-        referenceType: 'invoice',
-        referenceId: invoice.id,
-        createdBy: input.userId,
-        remarks: `${input.type === 'retail' ? 'Retail' : 'Wholesale'} sale - ${invoiceNumber}`,
-      });
-    }
-  }
+  await writeLines(tx, invoice, lines, input.userId);
 
   if (input.payment && paidNow > 0n) {
     await tx.insert(payments).values({
@@ -225,6 +253,95 @@ export async function createInvoice(tx: Tx, input: CreateInvoiceInput) {
   }
 
   return invoice;
+}
+
+export interface UpdateInvoiceInput {
+  items: InvoiceItemInput[];
+  overallDiscount: string;
+  gstRate?: string;
+  /** When given, replaces all recorded payments with this one (the edit form holds the total paid). */
+  payment?: PaymentInput | null;
+  notes?: string | null;
+  userId: number;
+}
+
+/**
+ * Edits a saved invoice in a single transaction. The invoice number, date, owner and the rate
+ * snapshot stay as billed. Stock from the old lines is put back (logged as "returned"), then the
+ * new lines are deducted, and every total is recalculated on the server.
+ */
+export async function updateInvoice(tx: Tx, id: number, input: UpdateInvoiceInput) {
+  const locked = await tx.execute<{ id: number }>(sql`SELECT id FROM invoices WHERE id = ${id} FOR UPDATE`);
+  if (!locked.rows[0]) throw notFound('Invoice');
+  const [invoice] = await tx.select().from(invoices).where(eq(invoices.id, id));
+
+  // Put back stock taken by the old lines.
+  const oldItems = await tx.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, id));
+  for (const old of oldItems) {
+    if (!old.productId) continue;
+    await incrementStock(tx, old.productId, old.quantity);
+    await recordMovement(tx, {
+      productId: old.productId,
+      movementType: 'returned',
+      quantity: old.quantity,
+      weight: totalWeight(old.weight, old.quantity),
+      fromPartyId: invoice.invoiceType === 'wholesale' ? invoice.partyId : null,
+      referenceType: 'invoice',
+      referenceId: id,
+      createdBy: input.userId,
+      remarks: `Bill edited - ${invoice.invoiceNumber}`,
+    });
+  }
+  await tx.delete(invoiceItems).where(eq(invoiceItems.invoiceId, id));
+
+  const { lines, totals } = await computeInvoice(tx, input.items, input.overallDiscount, input.gstRate, {
+    gold: invoice.goldRatePerGram,
+    silver: invoice.silverRatePerGram,
+  });
+  await writeLines(tx, invoice, lines, input.userId);
+
+  // Payments: the edit form states the total paid; otherwise keep what was recorded.
+  let paid: bigint;
+  if (input.payment) {
+    paid = toPaise(input.payment.amount);
+    if (paid > totals.grandTotal) throw badRequest('payment_exceeds_total', 'Payment amount cannot exceed the grand total');
+    await tx.delete(payments).where(eq(payments.invoiceId, id));
+    if (paid > 0n) {
+      await tx.insert(payments).values({
+        invoiceId: id,
+        amount: fromPaise(paid),
+        paymentMethod: input.payment.method,
+        paymentReference: input.payment.reference ?? null,
+        receivedBy: input.userId,
+      });
+    }
+  } else {
+    paid = toPaise(invoice.amountPaid);
+    if (paid > totals.grandTotal) {
+      throw badRequest('payment_exceeds_total', 'Amount already paid is more than the new grand total. Update the payment too.');
+    }
+  }
+
+  const [updated] = await tx
+    .update(invoices)
+    .set({
+      totalWeight: fromMilligrams(totals.totalWeightMg),
+      goldAmount: fromPaise(totals.goldAmount),
+      makingCharges: fromPaise(totals.makingCharges),
+      subtotal: fromPaise(totals.subtotal),
+      itemDiscount: fromPaise(totals.itemDiscount),
+      overallDiscount: fromPaise(totals.overallDiscount),
+      discount: fromPaise(totals.discount),
+      gstRate: fromPaise(totals.gstRateX100),
+      gstAmount: fromPaise(totals.gstAmount),
+      grandTotal: fromPaise(totals.grandTotal),
+      amountPaid: fromPaise(paid),
+      paymentStatus: paymentStatus(paid, totals.grandTotal),
+      notes: input.notes ?? invoice.notes,
+    })
+    .where(eq(invoices.id, id))
+    .returning();
+  return updated;
 }
 
 /** Records an additional payment against an existing invoice (row-locked). */

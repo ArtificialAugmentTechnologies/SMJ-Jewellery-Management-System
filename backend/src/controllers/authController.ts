@@ -1,10 +1,12 @@
 import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import { eq } from 'drizzle-orm';
+import crypto from 'node:crypto';
+import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '../config/db.js';
+import { env } from '../config/env.js';
 import { signToken } from '../middleware/auth.js';
-import { parseBody } from '../middleware/validate.js';
+import { parseBody, v } from '../middleware/validate.js';
 import { users } from '../models/schema.js';
 import { AppError, badRequest } from '../utils/errors.js';
 
@@ -59,4 +61,51 @@ export async function changePassword(req: Request, res: Response) {
     .set({ passwordHash: await bcrypt.hash(body.new_password, 12), updatedAt: new Date() })
     .where(eq(users.id, user.id));
   res.json({ ok: true });
+}
+
+// ---- Mobile number + password + one-time code ---------------------------------------
+// Demo mode: no SMS gateway is connected, so the code is returned in the response and the
+// sign-in page displays it. Only admin numbers on the MOBILE_LOGIN_NUMBERS allowlist can request a code.
+const OTP_TTL_MS = 5 * 60 * 1000;
+const OTP_MAX_ATTEMPTS = 5;
+const otps = new Map<string, { userId: number; code: string; expires: number; attempts: number }>();
+
+const otpRequestSchema = z.object({ mobile: v.mobile });
+const otpVerifySchema = z.object({ mobile: v.mobile, otp: z.string().trim().regex(/^[0-9]{6}$/, 'Enter the 6-digit code') });
+
+export async function requestOtp(req: Request, res: Response) {
+  const { mobile } = parseBody(otpRequestSchema, req);
+  const [user] = await getDb()
+    .select()
+    .from(users)
+    .where(and(eq(users.mobileNumber, mobile), eq(users.isActive, true)))
+    .orderBy(asc(users.id))
+    .limit(1);
+  // Only admin accounts whose number is on the MOBILE_LOGIN_NUMBERS allowlist may use mobile sign-in.
+  const allowed = env.mobileLoginNumbers.includes(mobile) && user?.role === 'admin';
+  if (!user || !allowed) throw new AppError(401, 'mobile_not_allowed', 'This mobile number is not registered for sign-in');
+  const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+  otps.set(mobile, { userId: user.id, code, expires: Date.now() + OTP_TTL_MS, attempts: 0 });
+  res.json({ otp: code, expires_in: OTP_TTL_MS / 1000, demo: true });
+}
+
+export async function verifyOtp(req: Request, res: Response) {
+  const { mobile, otp } = parseBody(otpVerifySchema, req);
+  const entry = otps.get(mobile);
+  if (!entry || entry.expires < Date.now()) {
+    otps.delete(mobile);
+    throw new AppError(401, 'otp_expired', 'The code has expired. Request a new one.');
+  }
+  if (entry.code !== otp) {
+    entry.attempts += 1;
+    if (entry.attempts >= OTP_MAX_ATTEMPTS) otps.delete(mobile);
+    throw new AppError(401, 'invalid_otp', 'Incorrect code');
+  }
+  otps.delete(mobile);
+  const [user] = await getDb().select().from(users).where(eq(users.id, entry.userId));
+  if (!user || !user.isActive) throw new AppError(403, 'account_inactive', 'This account has been deactivated');
+  res.json({
+    token: signToken(user),
+    user: { id: user.id, name: user.name, email: user.email, role: user.role },
+  });
 }

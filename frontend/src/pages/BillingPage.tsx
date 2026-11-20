@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Download, FileDown, Lock, Printer, Wallet } from 'lucide-react';
+import { ArrowLeft, Download, FileDown, Lock, Pencil, Printer, Wallet } from 'lucide-react';
 import { useI18n } from '../i18n';
-import { useToast } from '../context/AppProviders';
+import { useAuth, useToast } from '../context/AppProviders';
 import { api } from '../lib/api';
 import { useAsync, useDebounced } from '../lib/hooks';
 import { dateInputToIso, formatDateTime, formatMoney, formatWeight, num } from '../lib/format';
@@ -11,6 +11,7 @@ import { PAYMENT_METHODS, type Invoice, type InvoiceRow, type PaymentMethod } fr
 import { Button, Card, CardHeader, DataTable, Input, Modal, PageHeader, PageLoader, Select } from '../components/ui';
 import { PaymentBadge, TypeBadge } from '../components/badges';
 import InvoiceView from '../components/billing/InvoiceView';
+import BillingFlow from '../components/billing/BillingFlow';
 
 interface ListResponse {
   data: InvoiceRow[];
@@ -151,6 +152,8 @@ export function InvoicePage() {
   const { id } = useParams();
   const { t, te, lang } = useI18n();
   const notify = useToast();
+  const { isAdmin } = useAuth();
+  const navigate = useNavigate();
   const { data: inv, loading, setData, error } = useAsync(() => api.get<{ data: Invoice }>(`/invoices/${id}`).then((r) => r.data), [id]);
   const [payOpen, setPayOpen] = useState(false);
   const [amount, setAmount] = useState('');
@@ -208,9 +211,15 @@ export function InvoicePage() {
             {t('payment.record')}
           </Button>
         )}
-        <span className="ml-auto flex items-center gap-1.5 text-xs text-muted">
-          <Lock className="h-3.5 w-3.5" /> {t('invoice.immutable')}
-        </span>
+        {isAdmin ? (
+          <Button variant="outline" icon={Pencil} onClick={() => navigate(`/billing/${inv.id}/edit`)}>
+            {t('retail.editBill')}
+          </Button>
+        ) : (
+          <span className="ml-auto flex items-center gap-1.5 text-xs text-muted">
+            <Lock className="h-3.5 w-3.5" /> {t('invoice.immutable')}
+          </span>
+        )}
       </div>
       <InvoiceView invoice={inv} />
 
@@ -255,6 +264,47 @@ export function InvoicePage() {
           <Input label={t('payment.reference')} value={reference} onChange={(e) => setReference(e.target.value)} maxLength={120} />
         </form>
       </Modal>
+    </div>
+  );
+}
+
+/** Admin: edit a saved bill with the same step-by-step flow used to create it. */
+export function InvoiceEditPage() {
+  const { id } = useParams();
+  const { t, te } = useI18n();
+  const { isAdmin } = useAuth();
+  const navigate = useNavigate();
+  const { data: inv, loading, error } = useAsync(() => api.get<{ data: Invoice }>(`/invoices/${id}`).then((r) => r.data), [id]);
+
+  if (!isAdmin) return <p className="py-10 text-center text-muted">{t('invoice.immutable')}</p>;
+  if (loading && !inv) return <PageLoader />;
+  if (!inv) return <p className="py-10 text-center text-muted">{error ? te(error) : t('invoice.notFound')}</p>;
+  const owner = inv.customer ?? inv.party;
+  if (!owner) return null;
+
+  return (
+    <div>
+      <Link to={`/billing/${inv.id}`} className="no-print mb-3 inline-flex items-center gap-1 text-sm text-muted hover:text-ink">
+        <ArrowLeft className="h-4 w-4" /> {inv.invoiceNumber}
+      </Link>
+      <PageHeader title={`${t('retail.editBill')} · ${inv.invoiceNumber}`} />
+      <BillingFlow
+        type={inv.invoiceType}
+        owner={{ ...owner, address: inv.party?.address ?? null, partyType: inv.party?.partyType }}
+        ownerStepLabel={inv.invoiceType === 'retail' ? t('retail.steps.customer') : t('stock.party')}
+        ownerCard={
+          <Card className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="font-medium text-ink">{owner.name}</p>
+              <p className="text-sm text-muted">{owner.mobileNumber}</p>
+            </div>
+            <span className="tabular text-sm font-semibold text-gold-700 dark:text-gold-300">{inv.invoiceNumber}</span>
+          </Card>
+        }
+        onChangeOwner={() => navigate(`/billing/${inv.id}`)}
+        onNewBill={() => navigate(inv.invoiceType === 'retail' ? '/retail' : '/wholesale/new-bill')}
+        editInvoice={inv}
+      />
     </div>
   );
 }

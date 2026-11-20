@@ -123,6 +123,8 @@ function invoiceRegister(q: Q) {
 function movementReport(type: 'inward' | 'outward' | 'returned', q: Q) {
   const f = dateRange(sql`m.movement_date`, q);
   f.push(sql`m.movement_type = ${type}`);
+  // Stock put back by editing a saved bill is not a party return.
+  if (type === 'returned') f.push(sql`m.reference_type IS DISTINCT FROM 'invoice'`);
   return sql`
     SELECT m.movement_date, p.product_name, p.category, m.quantity, m.weight,
            m.unit_price, m.supplier_details,

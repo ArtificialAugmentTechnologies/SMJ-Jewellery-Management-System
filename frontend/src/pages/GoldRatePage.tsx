@@ -24,7 +24,8 @@ export default function GoldRatePage() {
     setSaving(true);
     try {
       await api.post('/gold-rates', {
-        gold_rate_per_gram: gold,
+        // Gold is optional: left blank, the server keeps the previous gold rate.
+        gold_rate_per_gram: gold || null,
         silver_rate_per_gram: silver,
         effective_date: new Date(effective).toISOString(),
       });
@@ -50,13 +51,13 @@ export default function GoldRatePage() {
             <>
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-xl bg-gold-50 p-4 dark:bg-gold-900/30">
-                  <p className="text-xs font-medium text-gold-800 dark:text-gold-200">{t('rate.todayGold')}</p>
-                  <p className="tabular mt-1 text-2xl font-semibold text-gold-900 dark:text-gold-100">{formatMoney(rate.goldRatePerGram)}</p>
+                  <p className="text-xs font-medium text-gold-800 dark:text-gold-200">{t('rate.todaySilver')}</p>
+                  <p className="tabular mt-1 text-2xl font-semibold text-gold-900 dark:text-gold-100">{formatMoney(rate.silverRatePerGram)}</p>
                   <p className="text-xs text-muted">{t('rate.perGram')}</p>
                 </div>
                 <div className="rounded-xl bg-surface-2 p-4">
-                  <p className="text-xs font-medium text-muted">{t('rate.todaySilver')}</p>
-                  <p className="tabular mt-1 text-2xl font-semibold text-ink">{formatMoney(rate.silverRatePerGram)}</p>
+                  <p className="text-xs font-medium text-muted">{t('rate.todayGold')}</p>
+                  <p className="tabular mt-1 text-2xl font-semibold text-ink">{formatMoney(rate.goldRatePerGram)}</p>
                   <p className="text-xs text-muted">{t('rate.perGram')}</p>
                 </div>
               </div>
@@ -75,8 +76,19 @@ export default function GoldRatePage() {
           <CardHeader title={t('rate.update')} icon={isAdmin ? Coins : Lock} />
           {isAdmin ? (
             <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2">
-              <Input label={t('rate.goldRate')} type="number" min="0.01" step="0.01" required value={gold} onChange={(e) => setGold(e.target.value)} prefix="₹" placeholder={rate ? String(num(rate.goldRatePerGram)) : ''} />
               <Input label={t('rate.silverRate')} type="number" min="0.01" step="0.01" required value={silver} onChange={(e) => setSilver(e.target.value)} prefix="₹" placeholder={rate ? String(num(rate.silverRatePerGram)) : ''} />
+              <Input
+                label={t('rate.goldRateOptional')}
+                type="number"
+                min="0.01"
+                step="0.01"
+                required={!rate}
+                value={gold}
+                onChange={(e) => setGold(e.target.value)}
+                prefix="₹"
+                placeholder={rate ? String(num(rate.goldRatePerGram)) : ''}
+                hint={rate ? t('rate.goldKeepHint', { rate: formatMoney(rate.goldRatePerGram) }) : undefined}
+              />
               <Input
                 label={t('rate.effectiveDate')}
                 type="datetime-local"
@@ -107,8 +119,8 @@ export default function GoldRatePage() {
           empty={t('common.noData')}
           columns={[
             { key: 'd', header: t('rate.effectiveDate'), render: (r) => formatDateTime(r.effectiveDate, lang) },
-            { key: 'g', header: t('rate.gold'), align: 'right', render: (r) => <span className="tabular font-medium">{formatMoney(r.goldRatePerGram)}</span> },
-            { key: 's', header: t('rate.silver'), align: 'right', render: (r) => <span className="tabular">{formatMoney(r.silverRatePerGram)}</span> },
+            { key: 's', header: t('rate.silver'), align: 'right', render: (r) => <span className="tabular font-medium">{formatMoney(r.silverRatePerGram)}</span> },
+            { key: 'g', header: t('rate.gold'), align: 'right', render: (r) => <span className="tabular">{formatMoney(r.goldRatePerGram)}</span> },
             { key: 'u', header: t('stock.recordedBy'), render: (r) => r.updatedByName ?? '—', hideSm: true },
             { key: 'c', header: t('common.date'), render: (r) => formatDateTime(r.createdAt, lang), hideSm: true },
           ]}

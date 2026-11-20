@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { BarChart3, FileDown, FileText, Play } from 'lucide-react';
+import { BarChart3, FileDown, FileText, Play, X } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { useToast } from '../context/AppProviders';
 import { api } from '../lib/api';
@@ -44,6 +44,17 @@ export default function ReportsPage() {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [ranFor, setRanFor] = useState<ReportName>('daily-sales');
   const [loading, setLoading] = useState(false);
+
+  // Back to the defaults: Daily Sales for this month so far, all sales types, no results shown.
+  function clearFilters() {
+    setReport('daily-sales');
+    setFrom(toDateInput(monthStart));
+    setTo(toDateInput());
+    setType('');
+    setMobile('');
+    setRows(null);
+    setRanFor('daily-sales');
+  }
 
   const supportsType = ['daily-sales', 'monthly-sales', 'product-sales', 'outstanding-payments'].includes(report);
 
@@ -101,7 +112,7 @@ export default function ReportsPage() {
     <div>
       <PageHeader title={t('reports.title')} subtitle={t('reports.subtitle')} />
       <Card className="mb-5">
-        <form onSubmit={run} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+        <form onSubmit={run} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-7">
           <Select
             label={t('reports.select')}
             value={report}
@@ -129,9 +140,12 @@ export default function ReportsPage() {
           {report === 'customer-history' && (
             <Input label={t('reports.mobileFilter')} inputMode="numeric" value={mobile} onChange={(e) => setMobile(digitsOnly(e.target.value))} />
           )}
-          <div className="flex items-end">
-            <Button type="submit" icon={Play} loading={loading} className="w-full">
+          <div className="flex items-end gap-2 sm:col-span-2">
+            <Button type="submit" icon={Play} loading={loading} className="flex-1 whitespace-nowrap">
               {t('reports.run')}
+            </Button>
+            <Button type="button" variant="outline" icon={X} onClick={clearFilters} title={t('common.clear')}>
+              {t('common.clear')}
             </Button>
           </div>
         </form>

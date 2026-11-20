@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { getDb } from '../config/db.js';
 import { parseBody, parseId, parseQuery, v } from '../middleware/validate.js';
 import { CATEGORIES, METALS, PAYMENT_METHODS } from '../models/schema.js';
-import { addPayment, createInvoice, getInvoiceDetail } from '../services/invoiceService.js';
+import { addPayment, createInvoice, getInvoiceDetail, updateInvoice } from '../services/invoiceService.js';
 
 const itemSchema = z.object({
   product_id: z.coerce.number().int().positive().optional().nullable(),
@@ -73,6 +73,27 @@ export async function createWholesaleInvoice(req: Request, res: Response) {
     }),
   );
   res.status(201).json({ data: await getInvoiceDetail(db, invoice.id) });
+}
+
+const { gold_rate_id: _ignored, ...editFields } = baseInvoiceSchema;
+const updateSchema = z.object(editFields);
+
+/** Edits a saved invoice (admin only). Number, date, owner and billed rates are kept. */
+export async function editInvoice(req: Request, res: Response) {
+  const id = parseId(req);
+  const body = parseBody(updateSchema, req);
+  const db = getDb();
+  await db.transaction((tx) =>
+    updateInvoice(tx, id, {
+      items: body.items,
+      overallDiscount: body.overall_discount,
+      gstRate: body.gst_rate,
+      payment: body.payment,
+      notes: body.notes,
+      userId: req.user!.id,
+    }),
+  );
+  res.json({ data: await getInvoiceDetail(db, id) });
 }
 
 export async function getInvoice(req: Request, res: Response) {

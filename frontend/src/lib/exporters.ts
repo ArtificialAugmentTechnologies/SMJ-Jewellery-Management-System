@@ -79,7 +79,7 @@ const rs = (v: unknown) => `Rs. ${formatAmount(v)}`;
 export function buildInvoicePdf(inv: Invoice) {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const w = doc.internal.pageSize.getWidth();
-  header(doc, inv.invoiceType === 'retail' ? 'RETAIL INVOICE' : 'WHOLESALE INVOICE');
+  header(doc, inv.invoiceType === 'retail' ? 'INVOICE' : 'WHOLESALE INVOICE');
 
   const owner = inv.customer ?? inv.party;
   doc.setTextColor(...DARK);

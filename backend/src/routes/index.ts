@@ -38,6 +38,8 @@ export function buildRouter({ loginRateLimit = true } = {}) {
     message: { error: { code: 'too_many_attempts', message: 'Too many login attempts. Try again in 15 minutes.' } },
   });
   r.post('/auth/login', ...(loginRateLimit ? [loginLimiter] : []), auth.login);
+  r.post('/auth/otp/request', ...(loginRateLimit ? [loginLimiter] : []), auth.requestOtp);
+  r.post('/auth/otp/verify', ...(loginRateLimit ? [loginLimiter] : []), auth.verifyOtp);
 
   // ---- Authenticated (admin + staff) -----------------------------------------
   r.use(requireAuth);
@@ -82,6 +84,7 @@ export function buildRouter({ loginRateLimit = true } = {}) {
   r.post('/invoices/retail', invoicesCtl.createRetailInvoice);
   r.post('/invoices/wholesale', invoicesCtl.createWholesaleInvoice);
   r.post('/invoices/:id/payments', invoicesCtl.recordPayment);
+  r.put('/invoices/:id', requireAdmin, invoicesCtl.editInvoice);
 
   r.get('/reports/:report', reports.runReport);
 

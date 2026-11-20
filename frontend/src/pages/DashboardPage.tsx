@@ -1,12 +1,13 @@
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Boxes, Clock, Coins, Gem, IndianRupee, PackagePlus, Receipt, ShoppingBag, Truck, Users, Wallet } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { useAuth } from '../context/AppProviders';
 import { api } from '../lib/api';
 import { useAsync } from '../lib/hooks';
-import { formatDateTime, formatInt, formatMoney, formatWeight, num } from '../lib/format';
+import { formatDateTime, formatInt, formatMoney, formatMonth, formatWeight, num } from '../lib/format';
 import type { GoldRate, InvoiceRow } from '../lib/types';
-import { Button, Card, CardHeader, DataTable, PageHeader, PageLoader, StatCard } from '../components/ui';
+import { Button, Card, CardHeader, DataTable, PageHeader, PageLoader, StatCard, cx } from '../components/ui';
 import { PaymentBadge, TypeBadge } from '../components/badges';
 
 interface Summary {
@@ -19,6 +20,8 @@ interface Summary {
   wholesale_count: number;
   wholesale_total: string;
   today_sales: string;
+  today_count: number | string;
+  monthlySales: { month: string; total: string; invoices: number | string }[];
   outstanding: string;
   active_parties: number;
   currentRate: GoldRate | null;
@@ -115,7 +118,13 @@ export default function DashboardPage() {
             icon={Boxes}
             tone="blue"
           />
-          <StatCard label={t('dashboard.todaySales')} value={formatMoney(d.today_sales)} icon={IndianRupee} tone="gold" />
+          <StatCard
+            label={t('dashboard.todaySales')}
+            value={formatMoney(d.today_sales)}
+            sub={t('dashboard.invoicesCount', { count: num(d.today_count) })}
+            icon={IndianRupee}
+            tone="gold"
+          />
           <StatCard
             label={t('dashboard.outstanding')}
             value={formatMoney(d.outstanding)}
@@ -130,6 +139,8 @@ export default function DashboardPage() {
           />
         </section>
       )}
+
+      {d && d.monthlySales?.length > 0 && <MonthlySales months={d.monthlySales} />}
 
       <Card>
         <CardHeader
@@ -156,5 +167,81 @@ export default function DashboardPage() {
         />
       </Card>
     </div>
+  );
+}
+
+/**
+ * Last 12 months of sales as one bar per month (oldest left). Hovering, focusing or tapping a bar
+ * shows that month's total and bill count in the header; the current month is shown by default.
+ */
+function MonthlySales({ months }: { months: Summary['monthlySales'] }) {
+  const { t, lang } = useI18n();
+  const series = [...months].reverse(); // API is newest first
+  const [picked, setPicked] = useState(series[series.length - 1].month);
+  const sel = series.find((m) => m.month === picked) ?? series[series.length - 1];
+  const max = Math.max(...series.map((m) => num(m.total)), 0);
+  const short = (ym: string) => {
+    const [y, m] = ym.split('-').map(Number);
+    return new Intl.DateTimeFormat(lang === 'ta' ? 'ta-IN' : lang === 'hi' ? 'hi-IN' : 'en-IN', { month: 'short' }).format(new Date(y, m - 1, 1));
+  };
+
+  return (
+    <Card className="animate-fade-in mb-6">
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="font-semibold text-ink">{t('dashboard.monthlySales')}</h2>
+          <p className="text-xs text-muted">{t('dashboard.monthlyHint')}</p>
+        </div>
+        <div className="text-right" aria-live="polite">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted">{formatMonth(sel.month, lang)}</p>
+          <p className="tabular text-2xl font-semibold text-ink">{formatMoney(sel.total)}</p>
+          <p className="text-xs text-muted">{t('dashboard.invoicesCount', { count: num(sel.invoices) })}</p>
+        </div>
+      </div>
+
+      <div className="relative">
+        {/* Recessive baseline grid: top and middle guides */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-40 border-t border-dashed border-line/70" aria-hidden />
+        <div className="pointer-events-none absolute inset-x-0 top-20 border-t border-dashed border-line/70" aria-hidden />
+        <ul className="relative flex h-40 items-end gap-[2px] border-b border-line" role="list">
+          {series.map((m) => {
+            const value = num(m.total);
+            const h = max > 0 ? Math.max((value / max) * 100, value > 0 ? 3 : 0) : 0;
+            const active = m.month === sel.month;
+            return (
+              <li key={m.month} className="flex h-full flex-1 items-end">
+                <button
+                  type="button"
+                  onMouseEnter={() => setPicked(m.month)}
+                  onFocus={() => setPicked(m.month)}
+                  onClick={() => setPicked(m.month)}
+                  aria-label={`${formatMonth(m.month, lang)}: ${formatMoney(m.total)}, ${t('dashboard.invoicesCount', { count: num(m.invoices) })}`}
+                  aria-pressed={active}
+                  className="group flex h-full w-full items-end justify-center rounded-t px-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/60 sm:px-1.5"
+                >
+                  <span
+                    className={cx(
+                      'block w-full max-w-10 rounded-t-[4px] transition-[height,background-color] duration-500',
+                      active ? 'bg-gold-600 dark:bg-gold-400' : 'bg-gold-300 group-hover:bg-gold-400 dark:bg-gold-700 dark:group-hover:bg-gold-600',
+                    )}
+                    style={{ height: h > 0 ? `${h}%` : '2px' }}
+                  />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        <ol className="mt-2 flex gap-[2px]" aria-hidden>
+          {series.map((m) => (
+            <li
+              key={m.month}
+              className={cx('flex-1 truncate text-center text-[10px] sm:text-xs', m.month === sel.month ? 'font-semibold text-ink' : 'text-muted')}
+            >
+              {short(m.month)}
+            </li>
+          ))}
+        </ol>
+      </div>
+    </Card>
   );
 }

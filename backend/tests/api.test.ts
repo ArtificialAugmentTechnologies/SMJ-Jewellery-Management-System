@@ -17,6 +17,7 @@ process.env.JWT_SECRET = 'test-secret-that-is-at-least-32-characters-long';
 process.env.ADMIN_EMAIL = 'admin@smj.test';
 process.env.ADMIN_PASSWORD = 'Admin12345';
 process.env.ADMIN_NAME = 'Test Admin';
+process.env.MOBILE_LOGIN_NUMBERS = '9876500011';
 
 let base = '';
 let server: Server;
@@ -137,6 +138,35 @@ describe('Security', () => {
     assert.equal((await api('POST', '/stock/inward', {}, staffToken)).status, 403);
     assert.equal((await api('POST', '/wholesale/parties', {}, staffToken)).status, 403);
     assert.equal((await api('GET', '/dashboard', undefined, staffToken)).status, 200);
+  });
+
+  it('signs in with an allowed admin mobile number + one-time code (no password)', async () => {
+    const c = await api('POST', '/users', {
+      name: 'Mobile Admin', email: 'mobile@smj.test', mobile_number: '9876500011', role: 'admin', password: 'Mobile12345',
+    });
+    assert.equal(c.status, 201);
+    const unknown = await api('POST', '/auth/otp/request', { mobile: '9000000000' }, '');
+    assert.equal(unknown.status, 401);
+    assert.equal(unknown.body.error.code, 'mobile_not_allowed');
+    // A real admin account, but a number that is not on the allowlist.
+    await api('POST', '/users', { name: 'Other Admin', email: 'other@smj.test', mobile_number: '9876500022', role: 'admin', password: 'Other12345' });
+    const other = await api('POST', '/auth/otp/request', { mobile: '9876500022' }, '');
+    assert.equal(other.status, 401);
+    assert.equal(other.body.error.code, 'mobile_not_allowed');
+
+    const r = await api('POST', '/auth/otp/request', { mobile: '+91 98765 00011' }, '');
+    assert.equal(r.status, 200);
+    assert.match(r.body.otp, /^[0-9]{6}$/);
+    const wrong = r.body.otp === '000000' ? '111111' : '000000';
+    const w = await api('POST', '/auth/otp/verify', { mobile: '9876500011', otp: wrong }, '');
+    assert.equal(w.body.error.code, 'invalid_otp');
+    const ok = await api('POST', '/auth/otp/verify', { mobile: '9876500011', otp: r.body.otp }, '');
+    assert.equal(ok.status, 200);
+    assert.equal(ok.body.user.email, 'mobile@smj.test');
+    assert.equal((await api('GET', '/auth/me', undefined, ok.body.token)).status, 200);
+    // A code works only once.
+    const again = await api('POST', '/auth/otp/verify', { mobile: '9876500011', otp: r.body.otp }, '');
+    assert.equal(again.body.error.code, 'otp_expired');
   });
 
   it('validates input on the server', async () => {
@@ -357,9 +387,57 @@ describe('Retail sales workflow', () => {
     assert.equal(ok.body.data.payments.length, 2);
   });
 
-  it('completed invoices cannot be edited or deleted through the API', async () => {
-    assert.equal((await api('PATCH', `/invoices/${invoiceId}`, { grand_total: 1 })).status, 404);
+  it('admin edits a saved invoice: stock is put back and re-deducted, billed rate is kept', async () => {
+    const original = [
+      { category: 'Ring', product_name: 'Stone Ring', description: 'Ruby stone', weight: '3.5', quantity: 1, making_charges: '500', discount: '100' },
+      { product_id: chainId, category: 'Chain', weight: '10', quantity: 2, making_charges: '1000', discount: '0' },
+      { category: 'Anklet', metal: 'silver', product_name: 'Silver Kolusu', weight: '20', quantity: 1 },
+    ];
+    const edited = original.map((it) => (it.product_id ? { ...it, quantity: 1 } : it));
+    const chainQty = async () => (await api('GET', `/products/${chainId}`)).body.data.quantity;
+    assert.equal(await chainQty(), 4);
+
+    // Staff cannot edit; deleting is still not possible.
+    assert.equal((await api('PUT', `/invoices/${invoiceId}`, { items: edited }, staffToken)).status, 403);
     assert.equal((await api('DELETE', `/invoices/${invoiceId}`)).status, 404);
+
+    // Already paid 167510 in full, so a smaller bill needs the payment updated too (and nothing changes).
+    const tooMuchPaid = await api('PUT', `/invoices/${invoiceId}`, { items: edited, overall_discount: '200' });
+    assert.equal(tooMuchPaid.status, 400);
+    assert.equal(tooMuchPaid.body.error.code, 'payment_exceeds_total');
+    assert.equal(await chainQty(), 4);
+
+    // Chain 2 -> 1 piece; the rate stays at the billed 7000 even though today's rate is 7200.
+    const r = await api('PUT', `/invoices/${invoiceId}`, {
+      items: edited, overall_discount: '200', payment: { amount: '97510', method: 'cash' },
+    });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.data.id, invoiceId);
+    assert.match(r.body.data.invoiceNumber, /-00001$/);
+    assert.equal(r.body.data.goldRatePerGram, '7000.00');
+    assert.equal(r.body.data.grandTotal, '97510.00'); // 24900 + 71000 + 1810 - 200
+    assert.equal(r.body.data.amountPaid, '97510.00');
+    assert.equal(r.body.data.paymentStatus, 'paid');
+    assert.equal(r.body.data.payments.length, 1);
+    assert.equal(r.body.data.items.length, 3);
+    assert.equal(await chainQty(), 5);
+    const moves = (await api('GET', `/products/${chainId}`)).body.data.movements;
+    assert.ok(moves.some((m: Json) => m.movementType === 'returned' && m.referenceId === invoiceId));
+
+    // Edit back to the original bill.
+    const back = await api('PUT', `/invoices/${invoiceId}`, {
+      items: original, overall_discount: '200', payment: { amount: '167510', method: 'cash' },
+    });
+    assert.equal(back.body.data.grandTotal, '167510.00');
+    assert.equal(back.body.data.paymentStatus, 'paid');
+    assert.equal(await chainQty(), 4);
+  });
+
+  it('silver rate alone can be updated; the gold rate is carried forward', async () => {
+    const r = await api('POST', '/gold-rates', { silver_rate_per_gram: '92' });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    assert.equal(r.body.data.goldRatePerGram, '7200.00');
+    assert.equal(r.body.data.silverRatePerGram, '92.00');
   });
 
   it('billing history supports search and filters', async () => {
@@ -519,6 +597,12 @@ describe('Dashboard and reports', () => {
     assert.equal(Number(d.wholesale_count), 1);
     assert.equal(d.currentRate.goldRatePerGram, '7200.00');
     assert.equal(d.recentTransactions.length, 5);
+    assert.equal(d.monthlySales.length, 12);
+    assert.match(d.monthlySales[0].month, /^\d{4}-\d{2}$/);
+    // Every bill in the test run is dated now, so this month holds all of them.
+    assert.equal(Number(d.monthlySales[0].invoices), 5);
+    assert.equal(Number(d.monthlySales[0].total).toFixed(2), Number(d.today_sales).toFixed(2));
+    assert.equal(d.monthlySales.slice(1).reduce((a: number, m: Json) => a + Number(m.invoices), 0), 0);
   });
 
   for (const report of [

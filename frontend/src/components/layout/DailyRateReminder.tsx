@@ -74,11 +74,11 @@ export function DailyRateReminder() {
   const cycle = rateDayStart(now);
   const open = !loading && isRateStale(rate, now) && dismissedCycle !== cycle;
 
-  // Prefill gold with the last known rate; silver is the one that must be entered.
+  // Silver must be entered; gold is optional (blank keeps the last gold rate).
   useEffect(() => {
     if (open) {
       setSilver('');
-      setGold(rate ? String(num(rate.goldRatePerGram)) : '');
+      setGold('');
     }
   }, [open, rate]);
 
@@ -96,7 +96,7 @@ export function DailyRateReminder() {
     setSaving(true);
     try {
       await api.post('/gold-rates', {
-        gold_rate_per_gram: gold,
+        gold_rate_per_gram: gold || null,
         silver_rate_per_gram: silver,
         effective_date: new Date().toISOString(),
       });
@@ -144,14 +144,16 @@ export function DailyRateReminder() {
               placeholder={rate ? String(num(rate.silverRatePerGram)) : ''}
             />
             <Input
-              label={t('rate.goldRate')}
+              label={t('rate.goldRateOptional')}
               type="number"
               min="0.01"
               step="0.01"
-              required
+              required={!rate}
               value={gold}
               onChange={(e) => setGold(e.target.value)}
               prefix="₹"
+              placeholder={rate ? String(num(rate.goldRatePerGram)) : ''}
+              hint={rate ? t('rate.goldKeepHint', { rate: formatMoney(rate.goldRatePerGram) }) : undefined}
             />
             <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
               <Button variant="secondary" onClick={later}>

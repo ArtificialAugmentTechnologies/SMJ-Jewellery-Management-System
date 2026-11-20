@@ -68,3 +68,9 @@ export function dateInputToIso(value: string, addDays = 0) {
 export function digitsOnly(value: string, max = 10) {
   return value.replace(/\D/g, '').slice(0, max);
 }
+
+/** "2026-11" -> "November 2026" in the UI language. */
+export function formatMonth(yyyyMm: string, lang: Lang = 'en') {
+  const [y, m] = yyyyMm.split('-').map(Number);
+  return new Intl.DateTimeFormat(locale(lang), { month: 'long', year: 'numeric' }).format(new Date(y, m - 1, 1));
+}

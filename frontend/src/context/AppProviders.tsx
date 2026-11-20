@@ -108,6 +108,8 @@ interface AuthValue {
   loading: boolean;
   isAdmin: boolean;
   login: (email: string, password: string) => Promise<User>;
+  /** Mobile sign-in, second step: exchange the one-time code for a session. */
+  loginWithOtp: (mobile: string, otp: string) => Promise<User>;
   logout: () => void;
 }
 const AuthContext = createContext<AuthValue | null>(null);
@@ -138,14 +140,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return r.user;
   }, []);
 
+  const loginWithOtp = useCallback(async (mobile: string, otp: string) => {
+    const r = await api.post<{ token: string; user: User }>('/auth/otp/verify', { mobile, otp });
+    setToken(r.token);
+    setUser(r.user);
+    return r.user;
+  }, []);
+
   const logout = useCallback(() => {
     setToken(null);
     setUser(null);
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, isAdmin: user?.role === 'admin', login, logout }),
-    [user, loading, login, logout],
+    () => ({ user, loading, isAdmin: user?.role === 'admin', login, loginWithOtp, logout }),
+    [user, loading, login, loginWithOtp, logout],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

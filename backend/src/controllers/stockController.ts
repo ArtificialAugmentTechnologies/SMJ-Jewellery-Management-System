@@ -126,10 +126,13 @@ export async function stockSummary(_req: Request, res: Response) {
       COALESCE(sum(weight)   FILTER (WHERE movement_type = 'inward'), 0)   AS total_in_weight,
       COALESCE(sum(quantity) FILTER (WHERE movement_type = 'outward'), 0)  AS total_out,
       COALESCE(sum(weight)   FILTER (WHERE movement_type = 'outward'), 0)  AS total_out_weight,
-      COALESCE(sum(quantity) FILTER (WHERE movement_type = 'sold'), 0)     AS sold,
-      COALESCE(sum(weight)   FILTER (WHERE movement_type = 'sold'), 0)     AS sold_weight,
-      COALESCE(sum(quantity) FILTER (WHERE movement_type = 'returned'), 0) AS returned,
-      COALESCE(sum(weight)   FILTER (WHERE movement_type = 'returned'), 0) AS returned_weight
+      -- Stock put back when a saved bill is edited is netted off sales, not counted as a party return.
+      COALESCE(sum(quantity) FILTER (WHERE movement_type = 'sold'), 0)
+        - COALESCE(sum(quantity) FILTER (WHERE (movement_type = 'returned' AND reference_type = 'invoice')), 0)                  AS sold,
+      COALESCE(sum(weight)   FILTER (WHERE movement_type = 'sold'), 0)
+        - COALESCE(sum(weight)   FILTER (WHERE (movement_type = 'returned' AND reference_type = 'invoice')), 0)                  AS sold_weight,
+      COALESCE(sum(quantity) FILTER (WHERE movement_type = 'returned' AND reference_type IS DISTINCT FROM 'invoice'), 0) AS returned,
+      COALESCE(sum(weight)   FILTER (WHERE movement_type = 'returned' AND reference_type IS DISTINCT FROM 'invoice'), 0) AS returned_weight
     FROM stock_movements
   `);
   const available = await db.execute(sql`

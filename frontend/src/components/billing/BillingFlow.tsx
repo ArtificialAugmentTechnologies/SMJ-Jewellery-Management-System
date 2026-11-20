@@ -15,7 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { useI18n } from '../../i18n';
-import { useRate, useToast } from '../../context/AppProviders';
+import { useAuth, useRate, useToast } from '../../context/AppProviders';
 import { api, ApiError } from '../../lib/api';
 import { calcLine, discountPaise, mgToNumber, paiseToNumber, paiseToString, toPaise, type DiscountMode } from '../../lib/money';
 import { formatMoney, formatWeight } from '../../lib/format';
@@ -25,6 +25,7 @@ import {
   METALS,
   PAYMENT_METHODS,
   type Category,
+  type GoldRate,
   type Invoice,
   type Metal,
   type PaymentMethod,
@@ -138,8 +139,8 @@ function DiscountToggle({ value, onChange }: { value: DiscountMode; onChange: (m
       value={value}
       onChange={onChange}
       options={[
-        { value: 'percent', label: '%', title: t('items.discountPercent') },
         { value: 'amount', label: '₹', title: t('items.discountAmount') },
+        { value: 'percent', label: '%', title: t('items.discountPercent') },
       ]}
     />
   );
@@ -165,6 +166,28 @@ const emptyItem = (category: Category | '' = ''): Omit<DraftItem, 'key' | 'categ
 
 let keySeq = 1;
 
+/** Turns a saved invoice's lines back into editable draft items (discounts as rupee amounts). */
+const itemsFromInvoice = (inv: Invoice): DraftItem[] =>
+  inv.items.map((it) => ({
+    key: keySeq++,
+    product_id: it.productId,
+    product_name: it.productName,
+    category: it.category,
+    metal: it.metal,
+    description: it.description ?? '',
+    weight: String(Number(it.weight)),
+    quantity: String(it.quantity),
+    making_charges: String(Number(it.makingCharges)),
+    discount: Number(it.discount) ? String(Number(it.discount)) : '',
+    discount_mode: 'amount',
+  }));
+
+function payModeOf(inv: Invoice): PayMode {
+  const paid = Number(inv.amountPaid);
+  if (paid > 0 && paid >= Number(inv.grandTotal)) return 'full';
+  return paid > 0 ? 'partial' : 'unpaid';
+}
+
 /* ----------------------------------------------------------- Component --- */
 
 export interface BillingOwner {
@@ -183,6 +206,7 @@ export default function BillingFlow({
   ownerCard,
   onChangeOwner,
   onNewBill,
+  editInvoice = null,
 }: {
   type: 'retail' | 'wholesale';
   owner: BillingOwner;
@@ -190,26 +214,47 @@ export default function BillingFlow({
   ownerCard: ReactNode;
   onChangeOwner: () => void;
   onNewBill: () => void;
+  /** A saved invoice to edit (admin). Its number, date, owner and billed rates are kept. */
+  editInvoice?: Invoice | null;
 }) {
   const { t, te } = useI18n();
   const notify = useToast();
-  const { rate, refresh: refreshRate } = useRate();
+  const { isAdmin } = useAuth();
+  const { rate: liveRate, refresh: refreshRate } = useRate();
+
+  // The saved invoice being edited, if any. Edits keep the rate that was billed.
+  const [editing, setEditing] = useState<Invoice | null>(editInvoice);
+  const rate: GoldRate | null = useMemo(
+    () =>
+      editing
+        ? {
+            id: 0,
+            goldRatePerGram: editing.goldRatePerGram,
+            silverRatePerGram: editing.silverRatePerGram,
+            effectiveDate: editing.invoiceDate,
+            createdAt: editing.invoiceDate,
+          }
+        : liveRate,
+    [editing, liveRate],
+  );
 
   const [step, setStep] = useState(1); // 1 = products, 2 = discount/payment, 3 = bill
-  const [items, setItems] = useState<DraftItem[]>([]);
+  const [items, setItems] = useState<DraftItem[]>(() => (editInvoice ? itemsFromInvoice(editInvoice) : []));
   const [form, setForm] = useState(emptyItem());
   const [editingKey, setEditingKey] = useState<number | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [stock, setStock] = useState<Product[]>([]);
-  const [overallDiscount, setOverallDiscount] = useState('');
+  const [overallDiscount, setOverallDiscount] = useState(() =>
+    editInvoice && Number(editInvoice.overallDiscount) ? String(Number(editInvoice.overallDiscount)) : '',
+  );
   const [overallMode, setOverallMode] = useState<DiscountMode>('amount');
-  const [gstOn, setGstOn] = useState(false);
-  const [gstRate, setGstRate] = useState('18');
-  const [payMode, setPayMode] = useState<PayMode>('full');
-  const [payAmount, setPayAmount] = useState('');
-  const [payMethod, setPayMethod] = useState<PaymentMethod>('cash');
-  const [payRef, setPayRef] = useState('');
-  const [notes, setNotes] = useState('');
+  const [gstOn, setGstOn] = useState(() => !!editInvoice && Number(editInvoice.gstRate) > 0);
+  const [gstRate, setGstRate] = useState(() => (editInvoice && Number(editInvoice.gstRate) > 0 ? String(Number(editInvoice.gstRate)) : '18'));
+  const [payMode, setPayMode] = useState<PayMode>(() => (editInvoice ? payModeOf(editInvoice) : 'full'));
+  const [payAmount, setPayAmount] = useState(() => (editInvoice && Number(editInvoice.amountPaid) ? String(Number(editInvoice.amountPaid)) : ''));
+  const [payMethod, setPayMethod] = useState<PaymentMethod>(() => editInvoice?.payments[0]?.paymentMethod ?? 'cash');
+  const [payRef, setPayRef] = useState(() => editInvoice?.payments[0]?.paymentReference ?? '');
+  const [notes, setNotes] = useState(() => editInvoice?.notes ?? '');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<Invoice | null>(null);
 
@@ -246,7 +291,15 @@ export default function BillingFlow({
     payMode === 'partial' && (paidPaise <= 0n || paidPaise > totals.grandTotal) ? t('payment.exceeds') : null;
 
   /* ---- item editor ---- */
-  const setField = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
+  const setField = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => {
+    setForm((f) => ({ ...f, [k]: v }));
+    // A field's old error goes away as soon as it is changed.
+    setFormErrors((e) => {
+      if (!(k in e)) return e;
+      const { [k as string]: _gone, ...rest } = e;
+      return rest;
+    });
+  };
 
   function pickStock(productId: string) {
     if (!productId) {
@@ -315,10 +368,10 @@ export default function BillingFlow({
   /* ---- draft + save ---- */
   const draftInvoice: Invoice = useMemo(
     () => ({
-      id: 0,
-      invoiceNumber: '—',
+      id: editing?.id ?? 0,
+      invoiceNumber: editing?.invoiceNumber ?? '—',
       invoiceType: type,
-      invoiceDate: new Date().toISOString(),
+      invoiceDate: editing?.invoiceDate ?? new Date().toISOString(),
       goldRatePerGram: rate?.goldRatePerGram ?? '0',
       silverRatePerGram: rate?.silverRatePerGram ?? '0',
       totalWeight: String(mgToNumber(totals.totalWeightMg)),
@@ -358,16 +411,14 @@ export default function BillingFlow({
       payments: [],
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, totals, rate, notes, paidPaise, owner, type],
+    [items, totals, rate, notes, paidPaise, owner, type, editing],
   );
 
   async function save() {
     if (!rate) return;
     setSaving(true);
     try {
-      const body = {
-        [type === 'retail' ? 'customer_id' : 'party_id']: owner.id,
-        gold_rate_id: rate.id,
+      const fields = {
         // Percentages are converted to exact rupee amounts; the server stores and re-checks amounts.
         items: items.map((it, i) => ({
           product_id: it.product_id,
@@ -382,12 +433,20 @@ export default function BillingFlow({
         })),
         overall_discount: paiseToString(totals.overall),
         gst_rate: gstOn ? gstRate : '0',
-        payment: paidPaise > 0n ? { amount: paiseToString(paidPaise), method: payMethod, reference: payRef || null } : null,
         notes: notes || null,
       };
-      const r = await api.post<{ data: Invoice }>(`/invoices/${type}`, body);
+      const payment = { amount: paiseToString(paidPaise), method: payMethod, reference: payRef || null };
+      const r = editing
+        ? // Editing: the form holds the total paid, which replaces the recorded payments.
+          await api.put<{ data: Invoice }>(`/invoices/${editing.id}`, { ...fields, payment })
+        : await api.post<{ data: Invoice }>(`/invoices/${type}`, {
+            ...fields,
+            [type === 'retail' ? 'customer_id' : 'party_id']: owner.id,
+            gold_rate_id: rate.id,
+            payment: paidPaise > 0n ? payment : null,
+          });
       setSaved(r.data);
-      notify(t('retail.invoiceSaved', { number: r.data.invoiceNumber }));
+      notify(t(editing ? 'retail.invoiceUpdated' : 'retail.invoiceSaved', { number: r.data.invoiceNumber }));
     } catch (err) {
       if (err instanceof ApiError && err.code === 'rate_changed') {
         await refreshRate();
@@ -420,9 +479,19 @@ export default function BillingFlow({
   const steps = [ownerStepLabel, t('retail.steps.products'), t('retail.steps.discount'), t('retail.steps.bill')];
   const goToStep = (i: number) => {
     if (saved) return;
-    if (i === 0) onChangeOwner();
-    else setStep(i);
+    if (i === 0) {
+      if (!editing) onChangeOwner(); // the customer of a saved bill cannot be changed
+    } else setStep(i);
   };
+
+  /** Re-open a saved bill for changes (admin). */
+  function editSaved() {
+    if (!saved) return;
+    setEditing(saved);
+    setSaved(null);
+    setStep(1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
   /* ------------------------------------------------------------ render --- */
 
@@ -437,6 +506,11 @@ export default function BillingFlow({
           <Button variant="secondary" icon={Download} onClick={() => downloadInvoicePdf(saved)}>
             {t('common.downloadPdf')}
           </Button>
+          {isAdmin && (
+            <Button variant="outline" icon={Pencil} onClick={editSaved}>
+              {t('retail.editBill')}
+            </Button>
+          )}
           <Link to="/billing">
             <Button variant="outline" icon={History}>
               {t('retail.viewPrevious')}
@@ -457,6 +531,14 @@ export default function BillingFlow({
 
       <div className="no-print mb-4">{ownerCard}</div>
 
+      {editing && (
+        <div className="no-print mb-4">
+          <Alert tone="warning" icon={Pencil}>
+            {t('retail.editingNotice', { number: editing.invoiceNumber })}
+          </Alert>
+        </div>
+      )}
+
       {!rate && (
         <div className="mb-4">
           <Alert tone="warning" icon={AlertTriangle}>
@@ -476,7 +558,10 @@ export default function BillingFlow({
                 label={t('items.category')}
                 required
                 value={form.category}
-                onChange={(e) => setForm({ ...emptyItem(e.target.value as Category), making_charges: form.making_charges })}
+                onChange={(e) => {
+                  setForm({ ...emptyItem(e.target.value as Category), making_charges: form.making_charges });
+                  setFormErrors({});
+                }}
                 placeholder={t('items.selectCategory')}
                 options={CATEGORIES.map((c) => ({ value: c, label: t(`categories.${c}`) }))}
                 error={formErrors.category}
@@ -489,10 +574,16 @@ export default function BillingFlow({
                 onChange={(e) => pickStock(e.target.value)}
                 disabled={!form.category}
                 placeholder={t('items.manualEntry')}
-                options={stock.map((p) => ({
-                  value: p.id,
-                  label: `${p.productName} · ${Number(p.weight).toFixed(3)} g · ${t('items.available', { count: p.quantity })}`,
-                }))}
+                options={[
+                  ...stock.map((p) => ({
+                    value: p.id,
+                    label: `${p.productName} · ${Number(p.weight).toFixed(3)} g · ${t('items.available', { count: p.quantity })}`,
+                  })),
+                  // A product already on a saved bill may now be out of stock; keep it selectable.
+                  ...(form.product_id && !stock.some((p) => p.id === form.product_id)
+                    ? [{ value: form.product_id, label: form.product_name }]
+                    : []),
+                ]}
                 wrapClassName="sm:col-span-2"
               />
               <Select
@@ -621,9 +712,11 @@ export default function BillingFlow({
                 {t('totals.grandTotal')}: <span className="tabular text-lg font-semibold text-ink">{formatMoney(paiseToNumber(totals.subtotal - totals.itemDiscount))}</span>
               </p>
               <div className="flex gap-2">
-                <Button variant="outline" icon={ArrowLeft} onClick={onChangeOwner}>
-                  {t('common.back')}
-                </Button>
+                {!editing && (
+                  <Button variant="outline" icon={ArrowLeft} onClick={onChangeOwner}>
+                    {t('common.back')}
+                  </Button>
+                )}
                 <Button onClick={() => setStep(2)} disabled={items.length === 0 || !!editingKey}>
                   {t('common.next')} <ArrowRight className="h-4 w-4" />
                 </Button>
@@ -765,7 +858,7 @@ export default function BillingFlow({
               {t('common.back')}
             </Button>
             <Button icon={Save} onClick={save} loading={saving} disabled={!rate || !!overallError || !!payError || !!gstError || items.length === 0}>
-              {saving ? t('retail.savingInvoice') : t('retail.saveInvoice')}
+              {saving ? t('retail.savingInvoice') : editing ? t('retail.saveChanges') : t('retail.saveInvoice')}
             </Button>
             <Button variant="ghost" icon={Printer} disabled title={t('retail.saveInvoice')}>
               {t('common.print')}

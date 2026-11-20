@@ -1,6 +1,6 @@
 # SMJ Jewellery – Database
 
-PostgreSQL schema for the SMJ Jewellery Store Management System, designed for **Neon PostgreSQL**.
+PostgreSQL schema for the SMJ Jewellery Inventory Management System, designed for **Neon PostgreSQL**.
 
 | File | Purpose |
 |------|---------|
